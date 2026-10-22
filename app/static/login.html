@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FFFDDE">
+  <title>บัญชีของฉัน | NourivaAI</title>
+  <link rel="stylesheet" href="/static/login.css">
+</head>
+<body>
+  <main class="login-shell">
+    <a class="brand" href="/" aria-label="กลับหน้าหลัก NourivaAI">
+      <span class="brand-icon">🌱</span>
+      <span><strong>Nouriva<span>AI</span></strong>
+        <small>Better Food, Better You</small></span>
+    </a>
+
+    <section class="login-card" aria-labelledby="loginTitle">
+      <div class="plant-art" aria-hidden="true">🥑</div>
+      <p class="eyebrow">YOUR PERSONAL WELLNESS SPACE</p>
+      <h1 id="loginTitle">ยินดีต้อนรับกลับมา</h1>
+      <p id="pageIntro" class="intro">
+        เข้าสู่ระบบเพื่อเริ่มต้นดูแลตัวเองไปด้วยกัน
+      </p>
+
+      <nav id="authTabs" class="auth-tabs" aria-label="ประเภทบัญชี">
+        <button type="button" class="auth-tab active" data-mode="login">
+          เข้าสู่ระบบ
+        </button>
+        <button type="button" class="auth-tab" data-mode="register">
+          สมัครสมาชิก
+        </button>
+      </nav>
+
+      <form id="loginForm">
+        <label for="email">อีเมล</label>
+        <input id="email" name="email" type="email"
+          autocomplete="username" placeholder="you@example.com"
+          maxlength="254" required>
+
+        <label for="password">รหัสผ่าน</label>
+        <div class="password-wrap">
+          <input id="password" name="password" type="password"
+            autocomplete="current-password" minlength="8" maxlength="128"
+            placeholder="กรอกรหัสผ่าน" required>
+          <button id="togglePassword" class="show-password" type="button"
+            aria-label="แสดงรหัสผ่าน" aria-pressed="false">แสดง</button>
+        </div>
+
+        <div id="confirmPasswordGroup" class="hidden">
+          <label for="confirmPassword">ยืนยันรหัสผ่าน</label>
+          <input id="confirmPassword" name="confirmPassword" type="password"
+            autocomplete="new-password" minlength="8" maxlength="128">
+        </div>
+
+        <div id="displayNameGroup" class="hidden">
+          <label for="displayName">ชื่อที่ต้องการให้แสดง</label>
+          <input id="displayName" name="displayName" type="text"
+            autocomplete="name" maxlength="100" placeholder="ชื่อของคุณ">
+        </div>
+
+        <button id="loginButton" class="primary-button" type="submit">
+          เข้าสู่ระบบ <span aria-hidden="true">→</span>
+        </button>
+        <p id="formMessage" class="form-message" role="status"
+          aria-live="polite"></p>
+      </form>
+
+      <section id="accountPanel" class="account-panel hidden"
+        aria-live="polite">
+        <div class="success-icon">✓</div>
+        <h2 id="accountTitle">เข้าสู่ระบบสำเร็จ</h2>
+        <p id="accountEmail"></p>
+        <p id="accountRole" class="account-role"></p>
+        <button id="continueButton" class="primary-button" type="button">
+          ไปหน้าหลัก <span aria-hidden="true">→</span>
+        </button>
+        <button id="profileButton" class="secondary-button" type="button">
+          ดูโปรไฟล์
+        </button>
+        <button id="logoutButton" class="text-button" type="button">
+          ออกจากระบบ
+        </button>
+      </section>
+
+      <div id="alternateOptions">
+        <div class="divider"><span>หรือ</span></div>
+        <button id="guestButton" class="secondary-button" type="button">
+          เข้าใช้งานแบบ Guest
+        </button>
+        <button id="googleButton" class="google-button" type="button" disabled
+          title="ต้องตั้งค่า Google OAuth ก่อน">
+          <span aria-hidden="true">G</span> ดำเนินการต่อด้วย Google
+        </button>
+        <p class="provider-note">
+          Google Sign-In จะเปิดให้ใช้เมื่อกำหนดค่าการเชื่อมต่ออย่างถูกต้อง
+        </p>
+      </div>
+
+      <a class="back-link" href="/">← กลับหน้าหลัก</a>
+      <p class="privacy-note">
+        โปรดใช้ข้อมูลที่คุณยินยอมให้ระบบจัดเก็บเท่านั้น
+      </p>
+    </section>
+    <footer>NourivaAI 🌱 · Made for better everyday choices.</footer>
+  </main>
+  <script src="/static/login.js"></script>
+</body>
+</html>

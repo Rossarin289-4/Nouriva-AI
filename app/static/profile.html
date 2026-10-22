@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>โปรไฟล์ของฉัน · NourivaAI</title>
+  <link rel="stylesheet" href="/static/login.css">
+  <link rel="stylesheet" href="/static/profile.css">
+</head>
+<body>
+  <main class="profile-page">
+    <a class="back-link" href="/">← กลับหน้าหลัก</a>
+    <h1>โปรไฟล์ของฉัน</h1>
+    <p>ข้อมูลส่วนบุคคลและข้อมูลร่างกายที่คุณเลือกบันทึก</p>
+
+    <p id="profileMessage" role="status" aria-live="polite"></p>
+
+    <form id="profileForm" class="profile-card">
+      <h2>ข้อมูลส่วนตัว</h2>
+
+      <label for="displayName">ชื่อที่แสดง</label>
+      <input id="displayName" maxlength="100">
+
+      <label for="dateOfBirth">วันเกิด</label>
+      <input id="dateOfBirth" type="date">
+
+      <label for="sex">เพศสำหรับสูตรคำนวณ</label>
+      <select id="sex">
+        <option value="">ไม่ระบุ</option>
+        <option value="female">หญิง</option>
+        <option value="male">ชาย</option>
+        <option value="other">อื่น ๆ</option>
+        <option value="not_specified">ไม่ต้องการระบุ</option>
+      </select>
+
+      <label for="activityLevel">ระดับกิจกรรม</label>
+      <select id="activityLevel">
+        <option value="">ไม่ระบุ</option>
+        <option value="sedentary">น้อยมาก</option>
+        <option value="light">เล็กน้อย</option>
+        <option value="moderate">ปานกลาง</option>
+        <option value="high">สูง</option>
+        <option value="very_high">สูงมาก</option>
+        <option value="unknown">ยังไม่ทราบ</option>
+      </select>
+
+      <button class="primary-button" type="submit">บันทึกโปรไฟล์</button>
+    </form>
+
+    <form id="measurementForm" class="profile-card">
+      <h2>ข้อมูลร่างกาย</h2>
+      <p>กรอกอย่างน้อยหนึ่งรายการ ระบบจะบันทึกเป็นข้อมูลที่คุณกรอกเอง</p>
+
+      <label for="weight">น้ำหนัก (กิโลกรัม)</label>
+      <input id="weight" type="number" min="0.5" max="500"
+        step="0.1" inputmode="decimal">
+
+      <label for="height">ส่วนสูง (เซนติเมตร)</label>
+      <input id="height" type="number" min="30" max="250"
+        step="0.1" inputmode="decimal">
+
+      <p id="latestMeasurement"></p>
+      <button class="primary-button" type="submit">บันทึกข้อมูลร่างกาย</button>
+    </form>
+
+    <button id="logoutButton" class="secondary-button" type="button">
+      ออกจากระบบ
+    </button>
+  </main>
+  <script src="/static/profile.js"></script>
+</body>
+</html>

@@ -11,6 +11,9 @@ from app.database import engine
 from app.routes.rules import router as rules_router
 from app.routes import nutrition
 from app.routes import foods
+from app.routes.auth import router as auth_router
+from app.routes.profile import router as profile_router
+from app.routes.consents import router as consents_router
 
 app = FastAPI(
     title="Nouriva AI API",
@@ -21,6 +24,9 @@ app = FastAPI(
 app.include_router(rules_router)
 app.include_router(nutrition.router)
 app.include_router(foods.router)
+app.include_router(auth_router)
+app.include_router(profile_router)
+app.include_router(consents_router)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -34,6 +40,16 @@ app.mount(
 @app.get("/", include_in_schema=False)
 def home():
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return FileResponse(STATIC_DIR / "login.html")
+
+
+@app.get("/my-profile", include_in_schema=False)
+def my_profile_page():
+    return FileResponse(STATIC_DIR / "profile.html")
 
 
 @app.get("/health/db")

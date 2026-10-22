@@ -749,3 +749,54 @@ footer {
   .barcode-input-row { flex-direction: column; }
   .barcode-input-row button { width: 100%; }
 }
+
+
+/* Login entry point in the dashboard header */
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 18px;
+}
+.login-nav-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border: 1px solid var(--leaf);
+  border-radius: 12px;
+  background: var(--leaf);
+  color: white;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.login-nav-button:hover {
+  background: var(--forest);
+}
+.login-nav-button:focus-visible {
+  outline: 3px solid #07665340;
+  outline-offset: 3px;
+}
+@media (max-width: 560px) {
+  .topbar {
+    padding-left: 16px;
+    padding-right: 16px;
+    gap: 10px;
+  }
+  .topbar-actions {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 7px;
+  }
+  .environment {
+    font-size: 9px;
+  }
+  .login-nav-button {
+    padding: 8px 11px;
+    font-size: 11px;
+  }
+}
