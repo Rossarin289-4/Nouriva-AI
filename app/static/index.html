@@ -1,0 +1,206 @@
+
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#FFFDDE">
+  <title>NourivaAI — Better Food, Better You</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="#home" class="brand">
+      <span class="brand-leaf">❧</span>
+      <span>
+        <strong>Nouriva<span>AI</span></strong>
+        <small>Better Food, Better You</small>
+      </span>
+    </a>
+    <span class="environment"><i></i> Local development</span>
+  </header>
+
+  <main class="page">
+    <section id="home" class="welcome">
+      <div class="welcome-copy">
+        <span class="eyebrow">YOUR NUTRITION COMPANION</span>
+        <h1>สวัสดี! วันนี้<br>เรามาดูแลตัวเองกัน <span>🌱</span></h1>
+        <p>รู้จักอาหาร เข้าใจโภชนาการ<br>เริ่มต้นดูแลสุขภาพไปด้วยกัน</p>
+      </div>
+      <div class="mascot-scene" aria-label="Nouri มาสคอตของ NourivaAI">
+        <span class="spark spark-one">✦</span>
+        <span class="spark spark-two">✧</span>
+        <div class="mascot">
+          <span class="leaf leaf-left"></span>
+          <span class="leaf leaf-right"></span>
+          <div class="eyes"><i></i><i></i></div>
+          <div class="cheeks"><i></i><i></i></div>
+          <div class="mouth"></div>
+        </div>
+        <span class="mascot-name">Nouri</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">YOUR WORKSPACE</span>
+          <h2>ภาพรวมระบบ</h2>
+          <p>สถานะล่าสุดของ NourivaAI</p>
+        </div>
+        <button id="refreshBtn" class="icon-button" aria-label="รีเฟรชข้อมูล">↻</button>
+      </div>
+
+      <div class="stats-grid">
+        <article class="stat-card">
+          <div class="stat-icon green">⌁</div>
+          <p>Backend API</p>
+          <strong id="apiStatus">กำลังตรวจสอบ</strong>
+          <span class="stat-foot">FastAPI service</span>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon mint">▤</div>
+          <p>ฐานข้อมูล</p>
+          <strong id="dbStatus">กำลังตรวจสอบ</strong>
+          <span class="stat-foot">PostgreSQL</span>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon lime">◉</div>
+          <p>รายการอาหาร</p>
+          <strong id="foodCount">—</strong>
+          <span class="stat-foot">รายการที่ค้นหาได้</span>
+        </article>
+        <article class="stat-card">
+          <div class="stat-icon cream">◇</div>
+          <p>กฎในระบบ</p>
+          <strong id="ruleCount">—</strong>
+          <span class="stat-foot">Rule definitions</span>
+        </article>
+      </div>
+    </section>
+
+    <section id="foods" class="section">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">EXPLORE FOOD</span>
+          <h2>คลังอาหารของเรา</h2>
+          <p>ค้นหาอาหารและตรวจสอบข้อมูลโภชนาการ</p>
+        </div>
+        <span class="section-emoji">🥑</span>
+      </div>
+
+      <form id="searchForm" class="search-box">
+        <span>⌕</span>
+        <input id="searchInput" type="search"
+          placeholder="ลองค้นหา Nutella หรือชื่ออาหาร..."
+          aria-label="ค้นหาอาหาร">
+        <button type="submit">ค้นหา</button>
+      </form>
+
+      <p id="foodMessage" class="message">กำลังโหลดรายการอาหาร...</p>
+      <div id="foodResults" class="food-list"></div>
+
+      <div id="nutritionPanel" class="nutrition-panel hidden"></div>
+    </section>
+
+
+    <section id="barcodeSection" class="section">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">SCAN & IDENTIFY</span>
+          <h2>เพิ่มอาหารด้วยรหัสหรือภาพ</h2>
+          <p>สแกน Barcode/QR Code หรือกรอกรหัสเพื่อตรวจสอบอาหาร</p>
+        </div>
+        <span class="section-emoji">📷</span>
+      </div>
+
+      <div class="scanner-card">
+        <form id="barcodeForm" class="barcode-form">
+          <label for="barcodeInput">Barcode หรือรหัสสินค้า</label>
+          <div class="barcode-input-row">
+            <input id="barcodeInput" type="text"
+              placeholder="กรอกรหัสบนบรรจุภัณฑ์"
+              autocomplete="off" maxlength="128" required>
+            <button type="submit">ค้นหารหัส</button>
+          </div>
+        </form>
+
+        <div class="scanner-actions">
+          <button id="startScannerBtn" type="button" class="secondary-button">
+            เปิดกล้องสแกน
+          </button>
+          <button id="stopScannerBtn" type="button"
+            class="secondary-button" disabled>ปิดกล้อง</button>
+        </div>
+
+        <video id="scannerVideo" class="scanner-video hidden"
+          autoplay muted playsinline aria-label="ภาพจากกล้องสำหรับสแกน"></video>
+        <p id="scannerMessage" class="message" aria-live="polite">
+          กรอกรหัสเพื่อค้นหาได้ หรือเปิดกล้องบนอุปกรณ์ที่รองรับ
+        </p>
+
+        <div id="barcodeResult" class="barcode-result hidden"
+          aria-live="polite"></div>
+
+        <div class="image-picker">
+          <label for="foodImageInput">หรือเลือก/ถ่ายภาพอาหารหรือฉลาก</label>
+          <input id="foodImageInput" type="file"
+            accept="image/*" capture="environment">
+          <img id="foodImagePreview" class="image-preview hidden"
+            alt="ตัวอย่างภาพที่เลือก">
+          <p id="imageMessage" class="subtext">
+            ภาพจะแสดงตัวอย่างในหน้านี้ ขั้นนี้ยังไม่ได้อ่านข้อความด้วย OCR
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section id="rules" class="section">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">SYSTEM CHECK</span>
+          <h2>ความพร้อมของกฎ</h2>
+          <p>ตรวจสอบก่อนนำกฎไปใช้คำนวณ</p>
+        </div>
+        <span class="section-emoji">🌿</span>
+      </div>
+
+      <article class="rule-card">
+        <div class="rule-symbol">N</div>
+        <div class="rule-content">
+          <div class="rule-heading">
+            <strong>NUT-001</strong>
+            <span id="nutRuleStatus" class="pill neutral">กำลังตรวจสอบ</span>
+          </div>
+          <h3>คำนวณจากค่าต่อ 100 กรัม</h3>
+          <p>คำนวณปริมาณสารอาหารตามน้ำหนักอาหารที่รับประทาน</p>
+          <code>ปริมาณที่ได้รับ = ค่าต่อ 100 g × น้ำหนักที่กิน ÷ 100</code>
+        </div>
+      </article>
+      <p class="notice">ⓘ กฎที่ยังไม่เปิดใช้งานจะไม่ถูกนำมาใช้คำนวณ</p>
+    </section>
+
+    <footer>
+      <span class="footer-brand">NourivaAI 🌱</span>
+      <span>Made for better everyday choices.</span>
+    </footer>
+  </main>
+
+  <nav class="bottom-nav" aria-label="เมนูหลัก">
+    <a class="nav-item active" href="#home">
+      <span>⌂</span><small>หน้าหลัก</small>
+    </a>
+    <a class="nav-item" href="#foods">
+      <span>⌕</span><small>ค้นหาอาหาร</small>
+    </a>
+    <a class="nav-item" href="#rules">
+      <span>▣</span><small>กฎของระบบ</small>
+    </a>
+    <a class="nav-item" href="/docs" target="_blank">
+      <span>↗</span><small>API Docs</small>
+    </a>
+  </nav>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

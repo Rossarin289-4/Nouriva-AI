@@ -1,0 +1,23 @@
+# Python environment
+.venv/
+venv/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python cache and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editor and OS files
+.DS_Store
+.vscode/
+
+# Backup files
+*.bak
+*.before_*

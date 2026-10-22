@@ -1,0 +1,54 @@
+
+from pathlib import Path
+
+from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+
+from app.database import engine
+from app.routes.rules import router as rules_router
+from app.routes import nutrition
+from app.routes import foods
+
+app = FastAPI(
+    title="Nouriva AI API",
+    description="Backend API for Nouriva AI",
+    version="0.1.0",
+)
+
+app.include_router(rules_router)
+app.include_router(nutrition.router)
+app.include_router(foods.router)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+app.mount(
+    "/static",
+    StaticFiles(directory=str(STATIC_DIR)),
+    name="static",
+)
+
+
+@app.get("/", include_in_schema=False)
+def home():
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/health/db")
+def check_database():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+        return {
+            "status": "healthy",
+            "database": "connected",
+        }
+
+    except SQLAlchemyError:
+        return {
+            "status": "error",
+            "database": "disconnected",
+        }
