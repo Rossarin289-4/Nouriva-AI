@@ -21,3 +21,9 @@ htmlcov/
 # Backup files
 *.bak
 *.before_*
+
+# Local backup files and database dumps
+*.backup_*
+backups/
+*.dump
+*.sql.bak

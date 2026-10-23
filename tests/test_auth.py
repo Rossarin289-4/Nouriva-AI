@@ -139,6 +139,7 @@ def test_auth_me_with_valid_token_returns_user_and_profile():
     token = jwt.encode(
         {
             "sub": user_id,
+            "jti": str(__import__("uuid").uuid4()),
             "iat": now,
             "exp": now + timedelta(minutes=60),
         },
@@ -151,9 +152,12 @@ def test_auth_me_with_valid_token_returns_user_and_profile():
             self.calls = 0
 
         def execute(self, query, params=None):
-            self.calls += 1
+            query_text = str(query)
 
-            if self.calls == 1:
+            if "revoked_auth_tokens" in query_text:
+                return FakeResult(None)
+
+            if "FROM public.app_users" in query_text:
                 return FakeResult({
                     "user_id": user_id,
                     "email": "tester@example.com",
@@ -357,6 +361,7 @@ def test_auth_me_accepts_cookie_without_bearer_token():
     token = jwt.encode(
         {
             "sub": user_id,
+            "jti": str(__import__("uuid").uuid4()),
             "iat": now,
             "exp": now + timedelta(minutes=60),
         },
@@ -369,8 +374,12 @@ def test_auth_me_accepts_cookie_without_bearer_token():
             self.calls = 0
 
         def execute(self, query, params=None):
-            self.calls += 1
-            if self.calls == 1:
+            query_text = str(query)
+
+            if "revoked_auth_tokens" in query_text:
+                return FakeResult(None)
+
+            if "FROM public.app_users" in query_text:
                 return FakeResult({
                     "user_id": user_id,
                     "email": "tester@example.com",
@@ -378,6 +387,7 @@ def test_auth_me_accepts_cookie_without_bearer_token():
                     "is_active": True,
                     "email_verified_at": None,
                 })
+
             return FakeResult({
                 "display_name": "Cookie User",
                 "preferred_language": "th",
@@ -396,5 +406,148 @@ def test_auth_me_accepts_cookie_without_bearer_token():
 
         assert response.status_code == 200
         assert response.json()["user"]["profile"]["display_name"] == "Cookie User"
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+
+def test_logout_revokes_token_and_auth_me_returns_401():
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    import jwt
+    from app.routes.auth import get_secret_key
+
+    user_id = "00000000-0000-0000-0000-000000000001"
+    token_jti = str(uuid4())
+    now = datetime.now(timezone.utc)
+
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "jti": token_jti,
+            "iat": now,
+            "exp": now + timedelta(minutes=30),
+        },
+        get_secret_key(),
+        algorithm="HS256",
+    )
+
+    class RevocationFakeDB:
+        def __init__(self):
+            self.revoked_tokens = set()
+            self.committed = False
+
+        def execute(self, query, params=None):
+            query_text = str(query)
+            params = params or {}
+
+            if "INSERT INTO public.revoked_auth_tokens" in query_text:
+                self.revoked_tokens.add(params["token_jti"])
+                return FakeResult(None)
+
+            if "FROM public.revoked_auth_tokens" in query_text:
+                return FakeResult(
+                    {"?column?": 1}
+                    if params["token_jti"] in self.revoked_tokens
+                    else None
+                )
+
+            if "FROM public.app_users" in query_text:
+                return FakeResult({
+                    "user_id": user_id,
+                    "email": "tester@example.com",
+                    "role": "user",
+                    "is_active": True,
+                    "email_verified_at": None,
+                })
+
+            if "FROM public.user_profiles" in query_text:
+                return FakeResult({
+                    "display_name": "Test User",
+                    "preferred_language": "th",
+                    "time_zone": "Asia/Bangkok",
+                })
+
+            raise AssertionError("Unexpected SQL: " + query_text)
+
+        def commit(self):
+            self.committed = True
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    fake_db = RevocationFakeDB()
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        with TestClient(app) as client:
+            logout_response = client.post(
+                "/auth/logout",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+            me_response = client.get(
+                "/auth/me",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert logout_response.status_code == 200
+        assert fake_db.committed is True
+        assert token_jti in fake_db.revoked_tokens
+        assert me_response.status_code == 401
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+
+def test_logout_returns_503_when_token_revocation_fails():
+    from datetime import datetime, timedelta, timezone
+    from uuid import uuid4
+
+    import jwt
+    from app.routes.auth import get_secret_key
+
+    user_id = "00000000-0000-0000-0000-000000000001"
+    now = datetime.now(timezone.utc)
+
+    token = jwt.encode(
+        {
+            "sub": user_id,
+            "jti": str(uuid4()),
+            "iat": now,
+            "exp": now + timedelta(minutes=30),
+        },
+        get_secret_key(),
+        algorithm="HS256",
+    )
+
+    class FailingRevocationDB:
+        def execute(self, query, params=None):
+            if "INSERT INTO public.revoked_auth_tokens" in str(query):
+                raise RuntimeError("Database unavailable")
+            raise AssertionError("Unexpected SQL: " + str(query))
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    app.dependency_overrides[get_db] = lambda: FailingRevocationDB()
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/auth/logout",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == (
+            "ไม่สามารถออกจากระบบได้ในขณะนี้ กรุณาลองอีกครั้ง"
+        )
     finally:
         app.dependency_overrides.pop(get_db, None)

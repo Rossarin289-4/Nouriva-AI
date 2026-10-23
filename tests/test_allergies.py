@@ -7,6 +7,7 @@ from app.database import get_db
 from app.main import app
 from app.routes.auth import get_secret_key
 from app.routes.allergies import router as allergies_router
+import uuid
 
 USER_ID = "00000000-0000-0000-0000-000000000021"
 ALLERGY_ID = "00000000-0000-0000-0000-000000000041"
@@ -22,6 +23,7 @@ def auth_headers():
     token = jwt.encode(
         {
             "sub": USER_ID,
+            "jti": str(uuid.uuid4()),
             "iat": now,
             "exp": now + timedelta(minutes=60),
         },
@@ -61,10 +63,12 @@ class AllergyFakeDB:
 
     def execute(self, query, params=None):
         sql = str(query)
+        if "revoked_auth_tokens" in sql:
+            return FakeResult([])
         params = params or {}
         self.calls.append((sql, params))
 
-        if "FROM app_users" in sql:
+        if "app_users" in sql and "revoked_auth_tokens" not in sql:
             return FakeResult([{
                 "user_id": USER_ID,
                 "email": "allergy-test@example.com",

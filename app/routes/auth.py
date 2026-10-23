@@ -5,7 +5,11 @@ from uuid import UUID, uuid4
 
 import jwt
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from argon2.exceptions import (
+    InvalidHashError,
+    VerificationError,
+    VerifyMismatchError,
+)
 from email_validator import EmailNotValidError, validate_email
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -23,6 +27,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 TOKEN_TTL_MINUTES = 60
 JWT_ALGORITHM = "HS256"
+AUTH_COOKIE_NAME = "nouriva_access_token"
 
 
 def get_secret_key():
@@ -63,10 +68,33 @@ def create_access_token(user_id: str) -> str:
     now = datetime.now(timezone.utc)
     payload = {
         "sub": user_id,
+        "jti": str(uuid4()),
         "iat": now,
         "exp": now + timedelta(minutes=TOKEN_TTL_MINUTES),
     }
-    return jwt.encode(payload, get_secret_key(), algorithm=JWT_ALGORITHM)
+    return jwt.encode(
+        payload,
+        get_secret_key(),
+        algorithm=JWT_ALGORITHM,
+    )
+
+
+def decode_access_token(token: str) -> dict:
+    return jwt.decode(
+        token,
+        get_secret_key(),
+        algorithms=[JWT_ALGORITHM],
+        options={"require": ["sub", "exp", "iat", "jti"]},
+    )
+
+
+def get_token_from_request(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = None,
+):
+    if credentials is not None:
+        return credentials.credentials
+    return request.cookies.get(AUTH_COOKIE_NAME)
 
 
 def get_current_user(
@@ -80,30 +108,47 @@ def get_current_user(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    # รองรับ Bearer token สำหรับ API และ HttpOnly cookie สำหรับหน้าเว็บ
-    token = (
-        credentials.credentials
-        if credentials is not None
-        else request.cookies.get("nouriva_access_token")
-    )
+    token = get_token_from_request(request, credentials)
     if not token:
         raise unauthorized
 
     try:
-        payload = jwt.decode(
-            token,
-            get_secret_key(),
-            algorithms=[JWT_ALGORITHM],
-            options={"require": ["sub", "exp", "iat"]},
-        )
+        payload = decode_access_token(token)
         user_id = str(UUID(payload["sub"]))
-    except (jwt.InvalidTokenError, ValueError, TypeError, KeyError):
+        token_jti = str(UUID(payload["jti"]))
+        expires_at = datetime.fromtimestamp(
+            payload["exp"],
+            tz=timezone.utc,
+        )
+    except (
+        jwt.InvalidTokenError,
+        ValueError,
+        TypeError,
+        KeyError,
+        OverflowError,
+        OSError,
+    ):
+        raise unauthorized
+
+    if expires_at <= datetime.now(timezone.utc):
+        raise unauthorized
+
+    revoked = db.execute(
+        text("""
+            SELECT 1
+            FROM public.revoked_auth_tokens
+            WHERE token_jti = :token_jti
+        """),
+        {"token_jti": token_jti},
+    ).first()
+
+    if revoked:
         raise unauthorized
 
     user = db.execute(
         text("""
             SELECT user_id, email, role, is_active, email_verified_at
-            FROM app_users
+            FROM public.app_users
             WHERE user_id = :user_id
         """),
         {"user_id": user_id},
@@ -113,6 +158,35 @@ def get_current_user(
         raise unauthorized
 
     return user
+
+
+def cookie_secure() -> bool:
+    return (
+        os.getenv("AUTH_COOKIE_SECURE", "false").strip().lower()
+        == "true"
+    )
+
+
+def set_auth_cookie(response: Response, token: str):
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=token,
+        max_age=TOKEN_TTL_MINUTES * 60,
+        httponly=True,
+        secure=cookie_secure(),
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_auth_cookie(response: Response):
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path="/",
+        httponly=True,
+        secure=cookie_secure(),
+        samesite="lax",
+    )
 
 
 @router.post("/register", status_code=201)
@@ -129,7 +203,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     existing = db.execute(
         text("""
             SELECT user_id
-            FROM app_users
+            FROM public.app_users
             WHERE lower(email) = :email
         """),
         {"email": email},
@@ -146,7 +220,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     try:
         user = db.execute(
             text("""
-                INSERT INTO app_users (
+                INSERT INTO public.app_users (
                     email, password_hash, role, is_active,
                     created_at, updated_at
                 )
@@ -165,7 +239,7 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
 
         db.execute(
             text("""
-                INSERT INTO user_profiles (
+                INSERT INTO public.user_profiles (
                     user_id, display_name,
                     preferred_language, time_zone,
                     created_at, updated_at
@@ -206,10 +280,6 @@ def register(data: RegisterRequest, db: Session = Depends(get_db)):
     }
 
 
-def cookie_secure() -> bool:
-    return os.getenv("AUTH_COOKIE_SECURE", "false").strip().lower() == "true"
-
-
 @router.post("/login")
 def login(
     data: LoginRequest,
@@ -222,13 +292,12 @@ def login(
         text("""
             SELECT user_id, email, password_hash, role,
                    is_active, email_verified_at
-            FROM app_users
+            FROM public.app_users
             WHERE lower(email) = :email
         """),
         {"email": email},
     ).mappings().first()
 
-    # ใช้ข้อความเดียวกันเมื่ออีเมลไม่มีหรือรหัสผ่านผิด
     invalid_login = HTTPException(
         status_code=401,
         detail="อีเมลหรือรหัสผ่านไม่ถูกต้อง",
@@ -249,16 +318,7 @@ def login(
         )
 
     token = create_access_token(str(user["user_id"]))
-
-    response.set_cookie(
-        key="nouriva_access_token",
-        value=token,
-        max_age=TOKEN_TTL_MINUTES * 60,
-        httponly=True,
-        secure=cookie_secure(),
-        samesite="lax",
-        path="/",
-    )
+    set_auth_cookie(response, token)
 
     return {
         "access_token": token,
@@ -281,7 +341,7 @@ def read_current_user(
     profile = db.execute(
         text("""
             SELECT display_name, preferred_language, time_zone
-            FROM user_profiles
+            FROM public.user_profiles
             WHERE user_id = :user_id
         """),
         {"user_id": str(user["user_id"])},
@@ -300,20 +360,67 @@ def read_current_user(
 
 
 @router.post("/logout")
-def logout(response: Response):
-    response.delete_cookie(
-        key="nouriva_access_token",
-        path="/",
-        httponly=True,
-        secure=cookie_secure(),
-        samesite="lax",
-    )
+def logout(
+    request: Request,
+    response: Response,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    token = get_token_from_request(request, credentials)
+
+    if token:
+        try:
+            payload = decode_access_token(token)
+            token_jti = str(UUID(payload["jti"]))
+            user_id = str(UUID(payload["sub"]))
+            expires_at = datetime.fromtimestamp(
+                payload["exp"],
+                tz=timezone.utc,
+            )
+
+            if expires_at > datetime.now(timezone.utc):
+                db.execute(
+                    text("""
+                        INSERT INTO public.revoked_auth_tokens (
+                            token_jti, user_id, expires_at
+                        )
+                        VALUES (
+                            :token_jti, :user_id, :expires_at
+                        )
+                        ON CONFLICT (token_jti) DO NOTHING
+                    """),
+                    {
+                        "token_jti": token_jti,
+                        "user_id": user_id,
+                        "expires_at": expires_at,
+                    },
+                )
+                db.commit()
+
+        except (
+            jwt.InvalidTokenError,
+            ValueError,
+            TypeError,
+            KeyError,
+            OverflowError,
+            OSError,
+        ):
+            # Token ไม่ถูกต้องก็ยังลบ cookie ให้ผู้ใช้ได้
+            db.rollback()
+        except Exception:
+            # หากบันทึกการเพิกถอนล้มเหลว ห้ามตอบว่าสำเร็จ
+            db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="ไม่สามารถออกจากระบบได้ในขณะนี้ กรุณาลองอีกครั้ง",
+            )
+
+    clear_auth_cookie(response)
     return {"message": "ออกจากระบบแล้ว"}
 
 
 @router.post("/guest", status_code=201)
 def create_guest(response: Response, db: Session = Depends(get_db)):
-    """Create a database-backed guest account with no real email address."""
     guest_email = f"guest-{uuid4().hex}@guest.nouriva.invalid"
     random_password = secrets.token_urlsafe(32)
     password_hash = password_hasher.hash(random_password)
@@ -321,7 +428,7 @@ def create_guest(response: Response, db: Session = Depends(get_db)):
     try:
         user = db.execute(
             text("""
-                INSERT INTO app_users (
+                INSERT INTO public.app_users (
                     email, password_hash, role, account_type,
                     is_active, created_at, updated_at
                 )
@@ -339,7 +446,7 @@ def create_guest(response: Response, db: Session = Depends(get_db)):
 
         db.execute(
             text("""
-                INSERT INTO user_profiles (
+                INSERT INTO public.user_profiles (
                     user_id, display_name,
                     preferred_language, time_zone,
                     created_at, updated_at
@@ -351,21 +458,15 @@ def create_guest(response: Response, db: Session = Depends(get_db)):
             """),
             {"user_id": str(user["user_id"])},
         )
+
         db.commit()
+
     except Exception:
         db.rollback()
         raise
 
     token = create_access_token(str(user["user_id"]))
-    response.set_cookie(
-        key="nouriva_access_token",
-        value=token,
-        max_age=TOKEN_TTL_MINUTES * 60,
-        httponly=True,
-        secure=cookie_secure(),
-        samesite="lax",
-        path="/",
-    )
+    set_auth_cookie(response, token)
 
     return {
         "message": "เข้าใช้งานแบบ Guest สำเร็จ",
