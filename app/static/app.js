@@ -433,6 +433,110 @@ $("foodImageInput").addEventListener("change", () => {
     `เลือกภาพแล้ว: ${file.name} — ยังไม่ได้ส่งภาพไป OCR หรือบันทึกลงระบบ`;
 });
 
+
+// Search foods by a name typed by the user in the photo section.
+// This does not perform AI image recognition.
+async function searchFoodsFromImage() {
+  const input = $("imageFoodSearch");
+  const message = $("imageFoodMessage");
+  const results = $("imageFoodResults");
+
+  if (!input || !message || !results) {
+    console.error("ไม่พบองค์ประกอบค้นหาอาหารจากภาพใน index.html");
+    return;
+  }
+
+  const query = input.value.trim();
+  results.innerHTML = "";
+
+  if (!query) {
+    message.textContent = "กรุณาพิมพ์ชื่ออาหารก่อนค้นหา";
+    return;
+  }
+
+  message.textContent = "กำลังค้นหาอาหารในคลัง...";
+  results.innerHTML = "";
+
+  try {
+    const params = new URLSearchParams({
+      search: query,
+      limit: "100"
+    });
+    const data = await getJSON(`/foods?${params}`);
+    const items = data.items ?? [];
+
+    if (!items.length) {
+      message.textContent =
+        "ไม่พบอาหารชื่อนี้ในคลัง ลองใช้ชื่ออื่น";
+      return;
+    }
+
+    message.textContent =
+      `พบ ${items.length} รายการ — เลือกรายการที่ตรงกับอาหารของคุณ`;
+
+    items.forEach((food) => {
+      const name = food.name_th || food.name_en || "ไม่ระบุชื่อ";
+      const status = food.verification_status || "unverified";
+
+      const row = document.createElement("article");
+      row.className = "food-item";
+
+      const info = document.createElement("div");
+      info.className = "food-info";
+
+      const details = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = name;
+
+      const description = document.createElement("p");
+      description.textContent =
+        food.brand_name || food.item_type || "อาหาร";
+
+      const statusText = document.createElement("p");
+      statusText.textContent = `สถานะข้อมูล: ${status}`;
+
+      details.append(title, description, statusText);
+      info.appendChild(details);
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "เลือกอาหารและดูสารอาหาร";
+
+      button.addEventListener("click", async () => {
+        message.textContent =
+          `กำลังโหลดข้อมูลของ ${name}...`;
+
+        await loadNutrition(food.food_id, name);
+        message.textContent =
+          `เลือก ${name} แล้ว โปรดตรวจสอบสถานะข้อมูลก่อนนำไปใช้`;
+      });
+
+      row.append(info, button);
+      results.appendChild(row);
+    });
+  } catch (error) {
+    message.textContent =
+      `ค้นหาไม่สำเร็จ: ${error.message}`;
+  }
+}
+
+const imageFoodSearchButton = $("imageFoodSearchBtn");
+const imageFoodSearchInput = $("imageFoodSearch");
+
+if (imageFoodSearchButton && imageFoodSearchInput) {
+  imageFoodSearchButton.addEventListener(
+    "click",
+    searchFoodsFromImage
+  );
+
+  imageFoodSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      searchFoodsFromImage();
+    }
+  });
+}
+
 window.addEventListener("beforeunload", stopBarcodeScanner);
 
 loadDashboard();

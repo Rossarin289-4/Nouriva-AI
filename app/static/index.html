@@ -106,53 +106,124 @@
       <div id="nutritionPanel" class="nutrition-panel hidden"></div>
     </section>
 
-
     <section id="barcodeSection" class="section">
       <div class="section-title">
         <div>
           <span class="eyebrow">SCAN & IDENTIFY</span>
           <h2>เพิ่มอาหารด้วยรหัสหรือภาพ</h2>
-          <p>สแกน Barcode/QR Code หรือกรอกรหัสเพื่อตรวจสอบอาหาร</p>
+          <p>ค้นหาสินค้าด้วยบาร์โค้ด หรือเลือกรูปอาหารที่ไม่มีบาร์โค้ด</p>
         </div>
         <span class="section-emoji">📷</span>
       </div>
 
       <div class="scanner-card">
+        <!-- ค้นหาด้วย Barcode -->
         <form id="barcodeForm" class="barcode-form">
           <label for="barcodeInput">Barcode หรือรหัสสินค้า</label>
           <div class="barcode-input-row">
-            <input id="barcodeInput" type="text"
+            <input
+              id="barcodeInput"
+              type="text"
               placeholder="กรอกรหัสบนบรรจุภัณฑ์"
-              autocomplete="off" maxlength="128" required>
+              autocomplete="off"
+              maxlength="128"
+              required
+            >
             <button type="submit">ค้นหารหัส</button>
           </div>
         </form>
 
         <div class="scanner-actions">
-          <button id="startScannerBtn" type="button" class="secondary-button">
+          <button
+            id="startScannerBtn"
+            type="button"
+            class="secondary-button"
+          >
             เปิดกล้องสแกน
           </button>
-          <button id="stopScannerBtn" type="button"
-            class="secondary-button" disabled>ปิดกล้อง</button>
+          <button
+            id="stopScannerBtn"
+            type="button"
+            class="secondary-button"
+            disabled
+          >
+            ปิดกล้อง
+          </button>
         </div>
 
-        <video id="scannerVideo" class="scanner-video hidden"
-          autoplay muted playsinline aria-label="ภาพจากกล้องสำหรับสแกน"></video>
+        <video
+          id="scannerVideo"
+          class="scanner-video hidden"
+          autoplay
+          muted
+          playsinline
+          aria-label="ภาพจากกล้องสำหรับสแกน"
+        ></video>
+
         <p id="scannerMessage" class="message" aria-live="polite">
-          กรอกรหัสเพื่อค้นหาได้ หรือเปิดกล้องบนอุปกรณ์ที่รองรับ
+          กรอกรหัสหรือเปิดกล้องเพื่อค้นหาสินค้า
         </p>
 
-        <div id="barcodeResult" class="barcode-result hidden"
-          aria-live="polite"></div>
+        <div
+          id="barcodeResult"
+          class="barcode-result hidden"
+          aria-live="polite"
+        ></div>
 
+        <!-- ค้นหาอาหารจากภาพ -->
         <div class="image-picker">
-          <label for="foodImageInput">หรือเลือก/ถ่ายภาพอาหารหรือฉลาก</label>
-          <input id="foodImageInput" type="file"
-            accept="image/*" capture="environment">
-          <img id="foodImagePreview" class="image-preview hidden"
-            alt="ตัวอย่างภาพที่เลือก">
-          <p id="imageMessage" class="subtext">
-            ภาพจะแสดงตัวอย่างในหน้านี้ ขั้นนี้ยังไม่ได้อ่านข้อความด้วย OCR
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">FOOD PHOTO</span>
+              <h3>อาหารที่ไม่มีบาร์โค้ด</h3>
+              <p>ถ่ายภาพหรือเลือกรูปอาหารจากอุปกรณ์ของคุณ</p>
+            </div>
+            <span class="section-emoji">🍱</span>
+          </div>
+
+          <label for="foodImageInput">เลือกรูปหรือถ่ายภาพอาหาร</label>
+          <input
+            id="foodImageInput"
+            type="file"
+            accept="image/*"
+            capture="environment"
+          >
+
+          <img
+            id="foodImagePreview"
+            class="image-preview hidden"
+            alt="ตัวอย่างภาพอาหารที่เลือก"
+          >
+
+          <p id="imageMessage" class="subtext" aria-live="polite">
+            รองรับไฟล์ภาพขนาดไม่เกิน 10 MB
+          </p>
+
+          <div class="image-food-search">
+            <label for="imageFoodSearch">ค้นหาชื่ออาหารในภาพ</label>
+
+            <div class="barcode-input-row">
+              <input
+                id="imageFoodSearch"
+                type="search"
+                placeholder="เช่น ข้าวผัด ไข่ต้ม หรือ Nutella"
+                autocomplete="off"
+              >
+              <button id="imageFoodSearchBtn" type="button">
+                ค้นหาอาหาร
+              </button>
+            </div>
+
+            <p id="imageFoodMessage" class="message" aria-live="polite">
+              เลือกภาพแล้วพิมพ์ชื่ออาหารเพื่อค้นหาในคลัง
+            </p>
+
+            <div id="imageFoodResults" class="food-list"></div>
+          </div>
+
+          <p class="notice">
+            หมายเหตุ: ขณะนี้ระบบแสดงตัวอย่างภาพและค้นหาจากชื่อที่ผู้ใช้ระบุ
+            ยังไม่มี AI ระบุชนิดอาหารจากภาพโดยอัตโนมัติ
           </p>
         </div>
       </div>
