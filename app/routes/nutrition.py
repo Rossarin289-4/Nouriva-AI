@@ -181,7 +181,8 @@ def calculate_from_food(
                 basis_type,
                 basis_quantity,
                 basis_unit,
-                verification_status
+                verification_status,
+                source_id
             FROM food_nutrition_bases
             WHERE food_id = :food_id
                 AND basis_type = 'per_100g'
@@ -280,7 +281,33 @@ def calculate_from_food(
             "message": "ข้อมูลอาหารหรือฐานโภชนาการยังต้องตรวจสอบ"
         }
 
-    # 5. อ่านเฉพาะสารอาหารที่มีอยู่จริง
+    # 5. ตรวจสอบแหล่งข้อมูลของฐานโภชนาการ
+    source_id = basis["source_id"]
+
+    if source_id is None:
+        return {
+            "status": "source_not_verified",
+            "message": "ฐานโภชนาการยังไม่มีแหล่งข้อมูลที่เชื่อมโยง"
+        }
+
+    source = db.execute(
+        text("""
+            SELECT food_source_id
+            FROM food_sources
+            WHERE food_source_id = :source_id
+              AND is_active = TRUE
+            LIMIT 1
+        """),
+        {"source_id": str(source_id)}
+    ).mappings().first()
+
+    if source is None:
+        return {
+            "status": "source_not_verified",
+            "message": "ไม่พบแหล่งข้อมูลที่เชื่อมโยง หรือแหล่งข้อมูลไม่ได้เปิดใช้งาน"
+        }
+
+    # 6. อ่านเฉพาะสารอาหารที่มีอยู่จริง
     nutrients = db.execute(
         text("""
             SELECT

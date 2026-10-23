@@ -152,6 +152,144 @@ async function searchFoods(search) {
   }
 }
 
+async function calculateFoodNutrition(foodId, foodName) {
+  const panel = $("nutritionPanel");
+  const weightInput = $("eatenWeightInput");
+  const message = $("calculationMessage");
+  const button = $("calculateNutritionBtn");
+
+  // ล้างผลคำนวณเก่าก่อนตรวจเงื่อนไข เพื่อไม่ให้ผลเดิมค้าง
+  const oldResult = $("consumedNutritionResult");
+  if (oldResult) oldResult.remove();
+
+  // ป้องกันการเรียก API หากกฎหรือข้อมูลยังไม่ผ่านเงื่อนไข
+  if (!button || button.dataset.canCalculate !== "true") {
+    if (message) {
+      message.textContent =
+        "ยังคำนวณไม่ได้: กฎหรือข้อมูลโภชนาการยังไม่ผ่านเงื่อนไขการตรวจสอบ";
+    }
+    return;
+  }
+
+  const weight = Number(weightInput?.value);
+
+  if (!Number.isFinite(weight) || weight <= 0) {
+    message.textContent = "กรุณากรอกน้ำหนักที่มากกว่า 0 กรัม";
+    return;
+  }
+
+  button.disabled = true;
+  message.textContent = "กำลังตรวจสอบข้อมูลและคำนวณ...";
+
+  try {
+    const response = await fetch("/nutrition/calculate-from-food", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        food_id: foodId,
+        eaten_weight_g: weight
+      })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.detail || `HTTP ${response.status}`);
+    }
+
+    if (data.status === "rule_not_active") {
+      message.textContent =
+        `ยังคำนวณไม่ได้: กฎ ${data.rule_code || "NUT-001"} ` +
+        `ยังมีสถานะ ${data.lifecycle_status || "ไม่เปิดใช้งาน"} ` +
+        "จึงยังไม่แสดงผลสารอาหารที่ได้รับ";
+      return;
+    }
+
+    if (data.status === "data_needs_review") {
+      message.textContent =
+        "ยังคำนวณไม่ได้: ข้อมูลอาหารหรือข้อมูลโภชนาการยังไม่ผ่านการตรวจสอบ";
+      return;
+    }
+
+    if (data.status !== "calculated") {
+      message.textContent = data.message || "ยังไม่สามารถคำนวณได้";
+      return;
+    }
+
+    message.textContent = data.message || "คำนวณสารอาหารสำเร็จ";
+
+    const nutrients = Array.isArray(data.nutrients) ? data.nutrients : [];
+
+    if (!nutrients.length) {
+      message.textContent = "ไม่พบรายการสารอาหารที่คำนวณได้";
+      return;
+    }
+
+    const result = document.createElement("div");
+    result.id = "consumedNutritionResult";
+
+    const heading = document.createElement("h4");
+    heading.textContent =
+      `สารอาหารที่ได้รับจาก ${foodName} (${data.eaten_weight_g} กรัม)`;
+    result.appendChild(heading);
+
+    const wrapper = document.createElement("div");
+    wrapper.style.overflowX = "auto";
+
+    const table = document.createElement("table");
+    table.className = "nutrition-table";
+
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+
+    ["สารอาหาร", "ปริมาณที่ได้รับ", "หน่วย"].forEach((label) => {
+      const th = document.createElement("th");
+      th.textContent = label;
+      headerRow.appendChild(th);
+    });
+
+    thead.appendChild(headerRow);
+
+    const tbody = document.createElement("tbody");
+
+    nutrients.forEach((item) => {
+      const row = document.createElement("tr");
+
+      const nameCell = document.createElement("td");
+      nameCell.textContent =
+        item.name_th || item.name_en || item.nutrient_code || "ไม่ระบุ";
+
+      const amountCell = document.createElement("td");
+      amountCell.textContent = String(item.consumed);
+
+      const unitCell = document.createElement("td");
+      unitCell.textContent = item.unit || "";
+
+      row.append(nameCell, amountCell, unitCell);
+      tbody.appendChild(row);
+    });
+
+    table.append(thead, tbody);
+    wrapper.appendChild(table);
+    result.appendChild(wrapper);
+
+    const ruleNote = document.createElement("p");
+    ruleNote.className = "notice";
+    ruleNote.textContent =
+      `คำนวณตามกฎ ${data.rule?.rule_code || "ไม่ระบุ"} ` +
+      `(${data.rule?.lifecycle_status || "ไม่ระบุ"}) ` +
+      `โดยใช้ข้อมูลที่ระบบอนุญาตให้คำนวณ`;
+    result.appendChild(ruleNote);
+
+    message.insertAdjacentElement("afterend", result);
+  } catch (error) {
+    message.textContent = `คำนวณไม่สำเร็จ: ${error.message}`;
+  } finally {
+    // ไม่เปิดปุ่ม หากข้อมูลหรือกฎยังไม่ผ่านเงื่อนไข
+    button.disabled = button.dataset.canCalculate !== "true";
+  }
+}
+
 async function loadNutrition(foodId, foodName) {
   const panel = $("nutritionPanel");
   panel.classList.remove("hidden");
@@ -191,20 +329,190 @@ async function loadNutrition(foodId, foodName) {
     ` : "<p>ยังไม่มีข้อมูลสารอาหาร</p>";
 
     const basis = rows[0];
+    const source = data.source || {};
+    const sourceUrl = source.source_url || "";
+    const safeSourceUrl = /^https:\/\//i.test(sourceUrl)
+      ? sourceUrl
+      : "";
+    const sourceDetails = `
+      <section class="notice" aria-label="แหล่งข้อมูลสารอาหาร">
+        <h4>แหล่งข้อมูลและการตรวจสอบ</h4>
+        <p>
+          แหล่งข้อมูล:
+          ${escapeHTML(source.source_name || source.source_code || "ไม่ระบุ")}
+        </p>
+        <p>
+          รหัสระเบียน:
+          ${escapeHTML(source.source_record_id || "ไม่ระบุ")}
+        </p>
+        <p>
+          สถานะข้อมูลโภชนาการ:
+          ${escapeHTML(source.verification_status || "ไม่ระบุ")}
+        </p>
+        ${
+          safeSourceUrl
+            ? `<p><a href="${escapeHTML(safeSourceUrl)}"
+                 target="_blank" rel="noopener noreferrer">
+                 เปิดเอกสารแหล่งข้อมูล
+               </a></p>`
+            : "<p>ยังไม่มี URL แหล่งข้อมูลสำหรับรายการนี้</p>"
+        }
+        ${
+          source.license_or_attribution
+            ? `<p>ข้อกำหนดการอ้างอิง: ${
+                escapeHTML(source.license_or_attribution)
+              }</p>`
+            : ""
+        }
+        ${
+          source.notes
+            ? `<p>หมายเหตุ: ${escapeHTML(source.notes)}</p>`
+            : ""
+        }
+      </section>
+    `;
+
+    const trustedStatuses = ["reviewed", "source_verified"];
+    const basisStatus = basis?.verification_status || "ไม่ระบุ";
+    const isTrustedBasis = trustedStatuses.includes(basisStatus);
+    const foodStatus = data.food?.verification_status || "ไม่ระบุ";
+    const trustedFood = trustedStatuses.includes(foodStatus);
+
+    let nutritionRuleActive = false;
+    let nutritionRuleStatus = "ตรวจสอบไม่ได้";
+
+    try {
+      const ruleData = await getJSON("/rules/NUT-001");
+      nutritionRuleStatus = ruleData.lifecycle_status || "ไม่ระบุ";
+      nutritionRuleActive = nutritionRuleStatus === "active";
+    } catch (ruleError) {
+      nutritionRuleActive = false;
+    }
+
+    const canCalculate =
+      isTrustedBasis && trustedFood && nutritionRuleActive;
+
+    const nutritionWarning = rows.length && (!isTrustedBasis || !trustedFood)
+      ? `
+        <div class="notice" role="alert">
+          <strong>ข้อมูลอาหารหรือสารอาหารยังไม่ผ่านการตรวจสอบ</strong>
+          <p>
+            สถานะอาหาร: ${escapeHTML(foodStatus)}<br>
+            สถานะฐานโภชนาการ: ${escapeHTML(basisStatus)}<br>
+            ตัวเลขในตารางเป็นข้อมูลอ้างอิงจากฐานข้อมูล
+            ไม่ใช่ผลคำนวณจากน้ำหนักอาหารที่รับประทาน
+            โปรดตรวจสอบแหล่งอ้างอิงก่อนนำไปใช้งานจริง
+          </p>
+        </div>
+      `
+      : "";
+
+    let portionItems = [];
+    let portionLoadMessage = "กำลังโหลดหน่วยบริโภค...";
+
+    try {
+      const portionData = await getJSON(
+        `/foods/${encodeURIComponent(foodId)}/portions`
+      );
+      portionItems = Array.isArray(portionData.items)
+        ? portionData.items
+        : [];
+      portionLoadMessage = portionItems.length
+        ? "เลือกหน่วยบริโภคเพื่อเติมน้ำหนักโดยประมาณ"
+        : "ยังไม่มีหน่วยบริโภคที่ผ่านการตรวจสอบ คุณสามารถกรอกน้ำหนักเป็นกรัมได้";
+    } catch (portionError) {
+      portionLoadMessage =
+        "โหลดหน่วยบริโภคไม่ได้ คุณยังสามารถกรอกน้ำหนักเป็นกรัมได้";
+    }
+
+    const portionOptions = portionItems.map((item) => {
+      const label = [
+        item.portion_name_th || item.portion_name_en || item.unit_name,
+        `${item.weight_g} กรัม`
+      ].filter(Boolean).join(" — ");
+
+      return `
+        <option value="${escapeHTML(item.weight_g)}">
+          ${escapeHTML(label)}
+        </option>
+      `;
+    }).join("");
 
     panel.innerHTML = `
       <h3>${escapeHTML(foodName)}</h3>
+      ${nutritionWarning}
       <p class="subtext">
         ข้อมูลต่อ ${escapeHTML(basis?.basis_quantity ?? "—")}
         ${escapeHTML(basis?.basis_unit ?? "")}
       </p>
       ${table}
+      ${sourceDetails}
+      <div class="calculation-form">
+        <label for="portionSelect">หน่วยบริโภคที่มีข้อมูลตรวจสอบแล้ว</label>
+        <select id="portionSelect">
+          <option value="">กรอกน้ำหนักเอง</option>
+          ${portionOptions}
+        </select>
+        <p id="portionMessage" class="message" aria-live="polite">
+          ${escapeHTML(portionLoadMessage)}
+        </p>
+
+        <label for="eatenWeightInput">น้ำหนักอาหารที่รับประทาน (กรัม)</label>
+        <div class="barcode-input-row">
+          <input
+            id="eatenWeightInput"
+            type="number"
+            min="0.1"
+            step="any"
+            value="100"
+            aria-label="น้ำหนักอาหารที่รับประทานเป็นกรัม"
+          >
+          <button
+            id="calculateNutritionBtn"
+            type="button"
+            data-can-calculate="${String(canCalculate)}"
+            ${canCalculate ? "" : "disabled"}
+          >
+            คำนวณสารอาหารที่ได้รับ
+          </button>
+        </div>
+        <p id="calculationMessage" class="message" aria-live="polite">
+          ${!nutritionRuleActive
+            ? `ยังคำนวณไม่ได้: กฎ NUT-001 มีสถานะ ${escapeHTML(nutritionRuleStatus)}`
+            : !trustedFood || !isTrustedBasis
+              ? "ยังคำนวณไม่ได้: ข้อมูลอาหารหรือข้อมูลโภชนาการยังไม่ผ่านการตรวจสอบ"
+              : "กรอกน้ำหนักแล้วกดคำนวณ"}
+        </p>
+      </div>
       <p class="notice">
         สถานะข้อมูล: ${escapeHTML(
           basis?.verification_status ?? "ไม่ระบุ"
         )} — โปรดตรวจสอบกับแหล่งข้อมูลก่อนใช้งานจริง
       </p>
     `;
+
+    $("portionSelect").addEventListener("change", (event) => {
+      const selectedWeight = Number(event.target.value);
+      if (Number.isFinite(selectedWeight) && selectedWeight > 0) {
+        $("eatenWeightInput").value = String(selectedWeight);
+      }
+    });
+
+    $("calculateNutritionBtn").addEventListener("click", () => {
+      calculateFoodNutrition(foodId, foodName);
+    });
+
+    $("eatenWeightInput").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        if (!canCalculate) {
+          $("calculationMessage").textContent =
+            "ยังคำนวณไม่ได้: โปรดตรวจสอบสถานะกฎและข้อมูลโภชนาการก่อน";
+          return;
+        }
+        calculateFoodNutrition(foodId, foodName);
+      }
+    });
 
     panel.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {

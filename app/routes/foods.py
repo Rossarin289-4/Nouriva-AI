@@ -169,6 +169,57 @@ def get_food(
         "item": dict(row)
     }
 
+
+@router.get("/{food_id}/portions")
+def get_food_portions(
+    food_id: UUID,
+    db: Session = Depends(get_db)
+):
+    food = db.execute(
+        text("""
+            SELECT food_id
+            FROM food_items
+            WHERE food_id = :food_id
+              AND is_active = TRUE
+        """),
+        {"food_id": str(food_id)}
+    ).mappings().first()
+
+    if food is None:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบอาหารนี้ หรืออาหารไม่ได้เปิดใช้งาน"
+        )
+
+    rows = db.execute(
+        text("""
+            SELECT
+                portion_id,
+                portion_name_th,
+                portion_name_en,
+                unit_name,
+                weight_g,
+                source_note,
+                verification_status
+            FROM food_portions
+            WHERE food_id = :food_id
+              AND weight_g > 0
+              AND verification_status IN (
+                  'reviewed',
+                  'source_verified'
+              )
+            ORDER BY portion_name_th
+        """),
+        {"food_id": str(food_id)}
+    ).mappings().all()
+
+    return {
+        "status": "success",
+        "food_id": str(food_id),
+        "count": len(rows),
+        "items": [dict(row) for row in rows]
+    }
+
 @router.get("/{food_id}/nutrition")
 def get_food_nutrition(
     food_id: UUID,
@@ -176,7 +227,11 @@ def get_food_nutrition(
 ):
     food = db.execute(
         text("""
-            SELECT food_id, name_th, name_en
+            SELECT
+                food_id,
+                name_th,
+                name_en,
+                verification_status
             FROM food_items
             WHERE food_id = :food_id
         """),
