@@ -171,20 +171,32 @@
       basisId = basisGroups.has(item.selected_nutrition_basis_id)
         ? item.selected_nutrition_basis_id
         : null;
+    } else if (basisGroups.size === 1) {
+      basisId = basisGroups.keys().next().value;
     }
     const basisRows = basisId ? basisGroups.get(basisId) : [];
     const basis = basisRows?.[0] || null;
     const basisVerified = Boolean(basis && trustedStatuses.has(basis.verification_status));
     const source = foodData.source;
+    const sourceActive = Boolean(source && source.source_is_active === true);
+    const sourceReviewed = Boolean(
+      source && trustedStatuses.has(source.verification_status),
+    );
     const sourceVerified = Boolean(
-      basis && basisGroups.size === 1 && source && source.source_is_active === true,
+      basis && basisGroups.size === 1 && sourceActive && sourceReviewed,
     );
     const nutrientsExist = Boolean(basis && basisRows.length > 0);
-    const ready = foodVerified && basisVerified && sourceVerified && nutrientsExist;
+    const itemConfirmed = item.confirmation_status === "confirmed";
+    const ready = itemConfirmed
+      && foodVerified
+      && basisVerified
+      && sourceVerified
+      && nutrientsExist;
     const sourceLabel = source
-      ? `${source.source_name || source.source_code || "แหล่งข้อมูล"} (${source.source_code || "ไม่ระบุรหัส"}) — ${sourceVerified ? "เปิดใช้งาน" : "ไม่พบหรือไม่ได้เปิดใช้งาน"}`
+      ? `${source.source_name || source.source_code || "แหล่งข้อมูล"} (${source.source_code || "ไม่ระบุรหัส"}) — ${!sourceActive ? "ไม่ได้เปิดใช้งาน" : sourceReviewed ? "ผ่านการตรวจสอบ" : "เปิดใช้งาน แต่ยังไม่ผ่านการตรวจสอบ"}`
       : "ไม่พบข้อมูลแหล่งที่มา";
     const parts = [
+      `การยืนยันรายการ: ${itemConfirmed ? "ยืนยันแล้ว" : "ยังไม่ยืนยัน"}`,
       `อาหาร: ${foodStatus || "ไม่ระบุสถานะ"}`,
       `ฐานโภชนาการ: ${basis?.verification_status || (basis ? "ไม่ระบุสถานะ" : "ไม่ได้เลือกหรือไม่พบฐาน")}`,
       `แหล่งข้อมูล: ${sourceLabel}`,
@@ -218,10 +230,20 @@
     const tag = appendText(card, "span", `summary-badge ${status.ready ? "verified" : "review"}`, status.label);
     tag.setAttribute("aria-label", status.label);
     appendText(card, "p", "summary-item-detail", status.detail);
-    const confirmation = item.confirmation_status === "needs_review"
-      ? "รอตรวจสอบ"
-      : (item.confirmation_status || "ไม่ระบุสถานะ");
-    appendText(card, "p", "summary-item-confirmation", `สถานะบันทึก: ${confirmation}`);
+    const confirmationLabels = {
+      confirmed: "ยืนยันแล้ว",
+      needs_review: "รอตรวจสอบ",
+      rejected: "ไม่ยอมรับรายการ",
+    };
+    const confirmation = confirmationLabels[item.confirmation_status]
+      || item.confirmation_status
+      || "ไม่ระบุสถานะ";
+    appendText(
+      card,
+      "p",
+      "summary-item-confirmation",
+      `การยืนยันรายการ: ${confirmation}`,
+    );
     return card;
   }
 

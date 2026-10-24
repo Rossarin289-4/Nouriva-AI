@@ -150,6 +150,9 @@ def test_dashboard_page_includes_meals_section_and_frontend_script():
     assert 'timeZone: "Asia/Bangkok"' in summary_script.text
     assert 'textContent = text' in summary_script.text
     assert 'ยังไม่แสดงยอดสารอาหาร' in summary_script.text
+    assert 'basisGroups.size === 1' in summary_script.text
+    assert 'item.confirmation_status === "confirmed"' in summary_script.text
+    assert 'การยืนยันรายการ:' in summary_script.text
     assert 'nutrition/calculate' not in summary_script.text
     assert profile_page.status_code == 200
     assert 'id="profileForm"' in profile_page.text

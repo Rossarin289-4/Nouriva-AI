@@ -1332,7 +1332,7 @@ function clearFoodPhotoPreview(message = "ยังไม่ได้เลื�
   $("foodImageInput").value = "";
   $("foodImagePreview").classList.add("hidden");
   $("foodImagePreview").removeAttribute("src");
-  $("foodImageAnalysisOutput").replaceChildren();
+  $("foodImageAnalysisContent").replaceChildren();
   $("foodImageAnalysisOutput").classList.add("hidden");
   $("foodImageConsent").checked = false;
   $("foodImageConsent").disabled = false;
@@ -1348,7 +1348,7 @@ $("foodImageInput").addEventListener("change", () => {
   const message = $("imageMessage");
   currentFoodImageAnalysis = null;
   selectedPhotoFood = null;
-  $("foodImageAnalysisOutput").replaceChildren();
+  $("foodImageAnalysisContent").replaceChildren();
   $("foodImageAnalysisOutput").classList.add("hidden");
   $("foodImageConsent").checked = false;
   if (foodImageObjectUrl) URL.revokeObjectURL(foodImageObjectUrl);

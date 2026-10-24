@@ -8,6 +8,7 @@
   <title>NourivaAI — Better Food, Better You</title>
   <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/ai-chat.css">
 </head>
 <body>
   <header class="topbar">
@@ -22,6 +23,7 @@
       <a class="nav-item active" href="#home" aria-current="page"><span aria-hidden="true">⌂</span><small>Dashboard</small></a>
       <a class="nav-item" href="#myMeals"><span aria-hidden="true">▦</span><small>Food Diary</small></a>
       <a class="nav-item" href="#nutrition-summary"><span aria-hidden="true">▤</span><small>Nutrition</small></a>
+      <a class="nav-item" href="#ai-chat"><span aria-hidden="true">✧</span><small>AI Chat</small></a>
       <a class="nav-item" href="#nutrition-advisor"><span aria-hidden="true">✦</span><small>AI Advisor</small></a>
       <a class="nav-item" href="/my-profile"><span aria-hidden="true">♙</span><small>Health Profile</small></a>
     </nav>
@@ -275,6 +277,70 @@
       </article>
     </section>
 
+
+    <section id="ai-chat" class="section ai-chat-section" aria-labelledby="aiChatTitle">
+      <div class="ai-chat-header">
+        <div>
+          <span class="eyebrow">YOUR AI CONVERSATION</span>
+          <h2 id="aiChatTitle">AI Chat</h2>
+          <p>เลือกผู้ให้บริการและพิมพ์คำถามที่ต้องการถามโดยตรง</p>
+        </div>
+        <span id="aiChatPlan" class="ai-chat-plan">กำลังตรวจสอบแผน</span>
+      </div>
+
+      <div id="aiChatNotice" class="ai-chat-notice" role="status" aria-live="polite">
+        กำลังตรวจสอบบัญชีและความพร้อมของ AI Chat...
+      </div>
+
+      <div id="aiChatConsentPanel" class="ai-chat-consent hidden">
+        <h3>ความยินยอมในการใช้ AI Chat</h3>
+        <p>
+          เมื่อใช้ AI Chat ข้อความที่คุณพิมพ์จะถูกส่งไปยังผู้ให้บริการ AI
+          ที่คุณเลือก ได้แก่ Google Gemini หรือ OpenAI เพื่อสร้างคำตอบ
+          ผู้ให้บริการอาจประมวลผลข้อมูลตามข้อกำหนดและนโยบายของตน
+        </p>
+        <p>
+          อย่าส่งรหัสผ่าน ข้อมูลระบุตัวตนที่ไม่จำเป็น หรือข้อมูลสุขภาพที่ละเอียดอ่อน
+          ระบบจะไม่แนบโปรไฟล์หรือประวัติอาหารให้โดยอัตโนมัติ
+        </p>
+        <label class="ai-chat-consent-check">
+          <input id="aiChatConsentCheck" type="checkbox">
+          <span>ฉันเข้าใจข้อมูลข้างต้นและยินยอมให้ประมวลผลข้อความที่ฉันส่งผ่าน AI Chat</span>
+        </label>
+        <button id="aiChatConsentButton" type="button" disabled>
+          ยินยอมและเริ่มใช้ AI Chat
+        </button>
+      </div>
+
+      <div id="aiChatWorkspace" class="ai-chat-workspace hidden">
+        <div class="ai-chat-controls">
+          <label for="aiChatProvider">ผู้ให้บริการ AI</label>
+          <select id="aiChatProvider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <p id="aiChatQuota" class="ai-chat-quota"></p>
+        </div>
+
+        <div id="aiChatMessages" class="ai-chat-messages"
+             role="log" aria-live="polite" aria-relevant="additions"></div>
+
+        <form id="aiChatForm" class="ai-chat-form">
+          <label for="aiChatInput">ข้อความของคุณ</label>
+          <textarea id="aiChatInput" maxlength="4000" rows="3"
+                    placeholder="พิมพ์คำถามที่ต้องการถาม..." required></textarea>
+          <div class="ai-chat-form-footer">
+            <small>สูงสุด 4,000 ตัวอักษร · ส่งเฉพาะข้อความนี้</small>
+            <button id="aiChatSend" type="submit">ส่งข้อความ</button>
+          </div>
+        </form>
+
+        <button id="aiChatWithdraw" class="ai-chat-withdraw" type="button">
+          ถอนความยินยอมและปิด AI Chat
+        </button>
+      </div>
+    </section>
+
     <section id="foods" class="section">
       <div class="section-title">
         <div>
@@ -475,5 +541,6 @@
   <script src="/static/app.js"></script>
   <script src="/static/meal-manager.js"></script>
   <script src="/static/nutrition-summary.js"></script>
+  <script src="/static/ai-chat.js"></script>
 </body>
 </html>
