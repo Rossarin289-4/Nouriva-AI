@@ -1,21 +1,11 @@
-:root {
-  --cream: #FFFDDE;
-  --mint: #E2FBCE;
-  --leaf: #076653;
-  --forest: #0C342C;
-  --muted: #75867C;
-  --line: #E8EEE4;
-  --white: #FFFFFF;
-}
 * { box-sizing: border-box; }
 body {
   margin: 0; min-height: 100vh; color: var(--forest);
   background:
     radial-gradient(ellipse at 10% 5%, #E2FBCE 0, transparent 35%),
     radial-gradient(ellipse at 95% 95%, #FFFDDE 0, transparent 36%),
-    #F8FAF1;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
-    "Noto Sans Thai", sans-serif;
+    var(--canvas);
+  font-family: var(--font-ui);
 }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }

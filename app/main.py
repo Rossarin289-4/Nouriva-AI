@@ -8,12 +8,14 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import engine
+from app.routes.meals import router as meals_router
 from app.routes.rules import router as rules_router
 from app.routes import nutrition
 from app.routes import foods
 from app.routes.auth import router as auth_router
 from app.routes.profile import router as profile_router
 from app.routes.consents import router as consents_router
+from app.routes.ai_chat import router as ai_chat_router
 
 app = FastAPI(
     title="Nouriva AI API",
@@ -27,6 +29,8 @@ app.include_router(foods.router)
 app.include_router(auth_router)
 app.include_router(profile_router)
 app.include_router(consents_router)
+app.include_router(ai_chat_router)
+app.include_router(meals_router)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 

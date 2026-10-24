@@ -1,0 +1,46 @@
+:root {
+  /* NourivaAI botanical palette shared by dashboard, account and profile. */
+  --cream: #FFFDEE;
+  --mint: #E2FBCE;
+  --lime: #E3EF26;
+  --leaf: #076653;
+  --forest: #0C342C;
+  --night: #06231D;
+  --white: #FFFFFF;
+  --canvas: #F8FAF6;
+  --surface: #FFFFFF;
+  --surface-mint: #F0FDF4;
+  --muted: #3F4945;
+  --line: #BEC9C4;
+  --success: #176B4D;
+  --warning: #626700;
+  --error: #BA1A1A;
+  --focus-ring: 0 0 0 3px #07665333;
+  --shadow: 0 8px 24px -4px #0766530D, 0 2px 6px -1px #0C342C08;
+  --shadow-raised: 0 20px 32px -8px #06231D1A;
+  --radius-sm: 0.5rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.5rem;
+  --radius-xl: 2rem;
+  --radius-pill: 9999px;
+  --space-xs: 0.25rem;
+  --space-sm: 0.5rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.25rem;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", sans-serif;
+}
+
+:focus-visible {
+  outline: 3px solid var(--leaf);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

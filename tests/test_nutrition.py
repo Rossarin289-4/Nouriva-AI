@@ -364,6 +364,7 @@ def test_calculate_from_food_success():
             "basis_quantity": 100,
             "basis_unit": "g",
             "verification_status": "reviewed",
+            "source_id": "source-test-id",
         }]),
 
         # 3. ตรวจสอบกฎ NUT-001
@@ -377,7 +378,10 @@ def test_calculate_from_food_success():
             ),
         }),
 
-        # 4. ข้อมูลสารอาหาร
+        # 4. แหล่งข้อมูลเปิดใช้งาน
+        FakeResult({"food_source_id": "source-test-id"}),
+
+        # 5. ข้อมูลสารอาหาร
         FakeResult([
             {
                 "nutrient_code": "carbohydrate_g",
@@ -441,11 +445,75 @@ def test_calculate_from_food_success():
         assert nutrients["energy_kcal"]["consumed"] == 81
         assert nutrients["energy_kcal"]["unit"] == "kcal"
 
-        assert fake_db.execute_count == 4
+        assert fake_db.execute_count == 5
 
     finally:
         app.dependency_overrides.clear()
 
+
+
+@pytest.mark.parametrize(
+    "source_id,source_result,expected_count",
+    [
+        (None, None, 3),
+        ("source-test-id", None, 4),
+    ],
+)
+def test_calculate_from_food_requires_active_source(
+    source_id, source_result, expected_count
+):
+    """ห้ามคำนวณเมื่อไม่มี source_id หรือไม่มีแหล่งข้อมูลที่ active."""
+    food_id = "8d78d477-67c6-4272-92a6-5495e114402e"
+
+    fake_results = [
+        FakeResult({
+            "food_id": food_id,
+            "name_th": "นูเทลล่า",
+            "name_en": "Nutella",
+            "brand_name": "Ferrero",
+            "verification_status": "reviewed",
+        }),
+        FakeResult([{
+            "nutrition_basis_id": "basis-source-test",
+            "basis_type": "per_100g",
+            "basis_quantity": 100,
+            "basis_unit": "g",
+            "verification_status": "reviewed",
+            "source_id": source_id,
+        }]),
+        FakeResult({
+            "rule_code": "NUT-001",
+            "rule_name": "คำนวณจากค่าต่อ 100 กรัม",
+            "lifecycle_status": "active",
+            "decision_logic": (
+                "consumed = nutrient_per_100g "
+                "* eaten_weight_g / 100"
+            ),
+        }),
+    ]
+
+    if source_id is not None:
+        fake_results.append(FakeResult(source_result))
+
+    fake_db = FakeDB(fake_results)
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    try:
+        with TestClient(app) as test_client:
+            response = test_client.post(
+                "/nutrition/calculate-from-food",
+                json={
+                    "food_id": food_id,
+                    "eaten_weight_g": 15,
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "source_not_verified"
+        assert "nutrients" not in response.json()
+        assert fake_db.execute_count == expected_count
+    finally:
+        app.dependency_overrides.clear()
 
 def test_calculate_from_food_without_nutrients():
     food_id = "8d78d477-67c6-4272-92a6-5495e114402e"
@@ -468,6 +536,7 @@ def test_calculate_from_food_without_nutrients():
             "basis_quantity": 100,
             "basis_unit": "g",
             "verification_status": "reviewed",
+            "source_id": "source-test-id",
         }]),
 
         # 3. กฎได้รับอนุมัติ
@@ -481,7 +550,10 @@ def test_calculate_from_food_without_nutrients():
             ),
         }),
 
-        # 4. ไม่มีรายการสารอาหาร
+        # 4. แหล่งข้อมูลเปิดใช้งาน
+        FakeResult({"food_source_id": "source-test-id"}),
+
+        # 5. ไม่มีรายการสารอาหาร
         FakeResult([]),
     ])
 
@@ -503,7 +575,7 @@ def test_calculate_from_food_without_nutrients():
 
         assert data["status"] == "nutrients_not_found"
         assert "nutrients" not in data
-        assert fake_db.execute_count == 4
+        assert fake_db.execute_count == 5
 
     finally:
         app.dependency_overrides.clear()
@@ -701,6 +773,7 @@ def test_food_nutrition_returns_source_and_nutrients(client):
         "food_id": food_id,
         "name_th": None,
         "name_en": "Nutella",
+        "verification_status": "needs_review",
     }
 
     common = {
@@ -764,6 +837,7 @@ def test_food_nutrition_returns_source_and_nutrients(client):
     assert data["source"]["source_url"].startswith("https://")
     assert data["source"]["source_record_id"] == "3017624010701"
     assert data["source"]["verification_status"] == "needs_review"
+    assert data["food"]["verification_status"] == "needs_review"
 
     assert data["nutrition"][0]["nutrient_code"] == "sugar_g"
     assert data["nutrition"][0]["amount"] == 56.3
@@ -833,6 +907,46 @@ def test_reviewed_food_with_unreviewed_basis_does_not_calculate(client):
     assert response.status_code == 200
     assert data["status"] == "data_needs_review"
     assert data["nutrition_basis"]["verification_status"] == "needs_review"
+    assert "nutrients" not in data
+    assert fake_db.execute_count == 3
+
+
+def test_unverified_openfoodfacts_food_never_calculates(client):
+    """An externally imported product must fail verification before nutrient reads."""
+    food_id = "8d78d477-67c6-4272-92a6-5495e114402e"
+    fake_db = FakeDB([
+        FakeResult({
+            "food_id": food_id,
+            "name_th": None,
+            "name_en": "Nutella",
+            "brand_name": "Ferrero",
+            "verification_status": "unverified",
+        }),
+        FakeResult({
+            "nutrition_basis_id": "external-basis-test",
+            "basis_type": "per_100g",
+            "basis_quantity": 100,
+            "basis_unit": "g",
+            "source_kind": "database",
+            "verification_status": "reviewed",
+        }),
+        FakeResult({
+            "rule_code": "NUT-001",
+            "rule_name": "คำนวณจากค่าต่อ 100 กรัม",
+            "lifecycle_status": "active",
+            "decision_logic": "consumed = per_100g * weight / 100",
+        }),
+    ])
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    response = client.post(
+        "/nutrition/calculate-from-food",
+        json={"food_id": food_id, "eaten_weight_g": 25},
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert data["status"] == "data_needs_review"
     assert "nutrients" not in data
     assert fake_db.execute_count == 3
 

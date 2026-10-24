@@ -6,7 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#FFFDDE">
   <title>NourivaAI — Better Food, Better You</title>
+  <link rel="stylesheet" href="/static/theme.css">
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/ai-chat.css">
 </head>
 <body>
   <header class="topbar">
@@ -17,8 +19,19 @@
         <small>Better Food, Better You</small>
       </span>
     </a>
+    <nav class="primary-navigation" aria-label="เมนูหลัก">
+      <a class="nav-item active" href="#home" aria-current="page"><span aria-hidden="true">⌂</span><small>Dashboard</small></a>
+      <a class="nav-item" href="#myMeals"><span aria-hidden="true">▦</span><small>Food Diary</small></a>
+      <a class="nav-item" href="#nutrition-summary"><span aria-hidden="true">▤</span><small>Nutrition</small></a>
+      <a class="nav-item" href="#ai-chat"><span aria-hidden="true">✧</span><small>AI Chat</small></a>
+      <a class="nav-item" href="#nutrition-advisor"><span aria-hidden="true">✦</span><small>AI Advisor</small></a>
+      <a class="nav-item" href="/my-profile"><span aria-hidden="true">♙</span><small>Health Profile</small></a>
+    </nav>
     <div class="topbar-actions">
-      <a class="login-nav-button" href="/login">เข้าสู่ระบบ <span aria-hidden="true">→</span></a>
+      <span id="authStatus" class="auth-status" role="status" aria-live="polite">กำลังตรวจสอบบัญชี...</span>
+      <a id="loginNav" class="login-nav-button" href="/login">เข้าสู่ระบบ <span aria-hidden="true">→</span></a>
+      <a id="profileNav" class="profile-nav-button hidden" href="/my-profile">โปรไฟล์</a>
+      <button id="logoutButton" class="logout-nav-button hidden" type="button">ออกจากระบบ</button>
       <span class="environment"><i></i> Local development</span>
     </div>
   </header>
@@ -27,8 +40,12 @@
     <section id="home" class="welcome">
       <div class="welcome-copy">
         <span class="eyebrow">YOUR NUTRITION COMPANION</span>
-        <h1>สวัสดี! วันนี้<br>เรามาดูแลตัวเองกัน <span>🌱</span></h1>
+        <h1 id="dashboardGreeting">สวัสดี! วันนี้<br>เรามาดูแลตัวเองกัน <span aria-hidden="true">🌱</span></h1>
         <p>รู้จักอาหาร เข้าใจโภชนาการ<br>เริ่มต้นดูแลสุขภาพไปด้วยกัน</p>
+        <div class="welcome-actions" aria-label="ทางลัด Dashboard">
+          <a class="primary-button" href="#myMeals">บันทึกมื้ออาหาร</a>
+          <a class="welcome-secondary-action" href="#barcodeSection">สแกนบาร์โค้ด</a>
+        </div>
       </div>
       <div class="mascot-scene" aria-label="Nouri มาสคอตของ NourivaAI">
         <span class="spark spark-one">✦</span>
@@ -49,7 +66,7 @@
         <div>
           <span class="eyebrow">YOUR WORKSPACE</span>
           <h2>ภาพรวมระบบ</h2>
-          <p>สถานะล่าสุดของ NourivaAI</p>
+          <p id="dashboardDateTime">กำลังโหลดวันที่และเวลา...</p>
         </div>
         <button id="refreshBtn" class="icon-button" aria-label="รีเฟรชข้อมูล">↻</button>
       </div>
@@ -80,6 +97,248 @@
           <span class="stat-foot">Rule definitions</span>
         </article>
       </div>
+      <div class="dashboard-lower-grid">
+        <article class="dashboard-recent-card" aria-labelledby="dashboardRecentTitle">
+          <div class="dashboard-card-heading">
+            <div><span class="eyebrow">FOOD DIARY</span><h3 id="dashboardRecentTitle">มื้ออาหารล่าสุด</h3></div>
+            <a href="#myMeals">ดูทั้งหมด <span aria-hidden="true">→</span></a>
+          </div>
+          <p id="dashboardMealsMessage" class="dashboard-meals-message" role="status" aria-live="polite" aria-busy="true">กำลังโหลดมื้ออาหาร...</p>
+          <ul id="dashboardRecentMeals" class="dashboard-recent-meals" aria-label="มื้ออาหารล่าสุด"></ul>
+        </article>
+        <article class="dashboard-readiness-card" aria-labelledby="dashboardReadinessTitle">
+          <span class="eyebrow">YOUR NEXT STEPS</span>
+          <h3 id="dashboardReadinessTitle">เครื่องมือดูแลข้อมูล</h3>
+          <a href="#barcodeSection"><span aria-hidden="true">⌕</span><span><strong>Barcode Scanner · พร้อมค้นหา</strong><small>ค้นหาจากรหัสได้; กล้องขึ้นกับสิทธิ์และอุปกรณ์</small></span><span aria-hidden="true">→</span></a>
+          <a href="#nutrition-advisor"><span aria-hidden="true">✦</span><span><strong>AI Advisor</strong><small>ยังไม่เปิดใช้งาน AI provider</small></span><span aria-hidden="true">→</span></a>
+        </article>
+      </div>
+    </section>
+
+    <section id="myMeals" class="section" aria-labelledby="myMealsTitle">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">YOUR MEALS</span>
+          <h2 id="myMealsTitle">มื้ออาหารของฉัน</h2>
+          <p>บันทึกมื้ออาหารและดูประวัติของคุณ</p>
+        </div>
+        <span class="section-emoji" aria-hidden="true">🍽️</span>
+      </div>
+
+      <form id="mealCreateForm" class="meal-form">
+        <h3>เพิ่มมื้ออาหาร</h3>
+        <div class="meal-form-grid">
+          <div class="meal-field">
+            <label for="newMealDate">วันที่</label>
+            <input id="newMealDate" type="date" required>
+          </div>
+          <div class="meal-field">
+            <label for="newMealType">ประเภทมื้อ</label>
+            <select id="newMealType" required>
+              <option value="breakfast">อาหารเช้า</option>
+              <option value="lunch">อาหารกลางวัน</option>
+              <option value="dinner">อาหารเย็น</option>
+              <option value="snack">ของว่าง</option>
+              <option value="other">อื่น ๆ</option>
+            </select>
+          </div>
+          <div class="meal-field">
+            <label for="newMealTime">เวลาที่รับประทาน (เวลาไทย)</label>
+            <input id="newMealTime" type="time">
+          </div>
+          <div class="meal-field">
+            <label for="newMealTitle">ชื่อมื้อ (ถ้ามี)</label>
+            <input id="newMealTitle" maxlength="200">
+          </div>
+          <div class="meal-field meal-form-wide">
+            <label for="newMealNotes">บันทึก (ถ้ามี)</label>
+            <textarea id="newMealNotes" maxlength="2000" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="meal-form-actions">
+          <button id="createMealButton" class="primary-button" type="submit">บันทึกมื้ออาหาร</button>
+        </div>
+      </form>
+
+      <div class="meal-history-header">
+        <div>
+          <h3>ประวัติมื้ออาหาร</h3>
+          <p>เลือกวันที่เพื่อดูรายการย้อนหลัง</p>
+        </div>
+        <div class="meal-history-filter">
+          <label for="mealHistoryDate">วันที่</label>
+          <input id="mealHistoryDate" type="date">
+          <button id="clearMealDate" class="secondary-button" type="button">ดูทั้งหมด</button>
+        </div>
+      </div>
+      <p id="mealsMessage" class="message" role="status" aria-live="polite">กำลังโหลดรายการมื้ออาหาร...</p>
+      <div id="mealResults" class="meal-list" aria-busy="true"></div>
+
+      <section id="mealDetailPanel" class="meal-detail hidden" aria-labelledby="mealDetailTitle">
+        <div class="meal-detail-heading">
+          <div>
+            <span class="eyebrow">MEAL DETAILS</span>
+            <h3 id="mealDetailTitle">รายละเอียดมื้ออาหาร</h3>
+            <p id="mealDetailMeta" class="meal-meta"></p>
+          </div>
+          <button id="closeMealDetail" class="secondary-button" type="button">ปิดรายละเอียด</button>
+        </div>
+        <p id="mealDetailNotes" class="meal-notes"></p>
+        <div class="meal-items-heading">
+          <h4>รายการอาหาร</h4>
+          <button id="showAddMealItem" class="primary-button" type="button">เพิ่มรายการอาหาร</button>
+        </div>
+        <p id="mealItemsMessage" class="message" role="status" aria-live="polite"></p>
+        <div id="mealItemsList" class="meal-items-list"></div>
+
+        <form id="mealItemForm" class="meal-form hidden">
+          <h4>เพิ่มอาหารจากคลัง</h4>
+          <label for="mealFoodSearch">ค้นหาชื่ออาหาร</label>
+          <div class="meal-food-search-row">
+            <input id="mealFoodSearch" type="search" autocomplete="off" placeholder="พิมพ์ชื่ออาหารหรือแบรนด์">
+            <button id="mealFoodSearchButton" class="secondary-button" type="button">ค้นหา</button>
+          </div>
+          <p id="mealFoodMessage" class="message" role="status" aria-live="polite">ค้นหาและเลือกอาหารจากรายการ</p>
+          <div id="mealFoodResults" class="meal-food-results"></div>
+          <div id="selectedMealFood" class="selected-meal-food hidden"></div>
+          <div id="mealItemEntryFields" class="meal-form-grid hidden">
+            <div class="meal-field">
+              <label for="mealItemQuantity">ปริมาณ</label>
+              <input id="mealItemQuantity" type="number" min="0.001" step="any" value="100" required>
+            </div>
+            <div class="meal-field">
+              <label for="mealItemUnit">หน่วย</label>
+              <select id="mealItemUnit">
+                <option value="g">กรัม</option>
+                <option value="portion">หน่วยบริโภคที่ตรวจสอบแล้ว</option>
+              </select>
+            </div>
+            <div id="mealPortionField" class="meal-field meal-form-wide hidden">
+              <label for="mealPortionSelect">หน่วยบริโภค</label>
+              <select id="mealPortionSelect"></select>
+            </div>
+            <div class="meal-field meal-form-wide">
+              <label for="mealItemNotes">บันทึก (ถ้ามี)</label>
+              <textarea id="mealItemNotes" maxlength="2000" rows="2"></textarea>
+            </div>
+            <div id="mealNutritionReference" class="meal-nutrition-reference meal-form-wide"></div>
+          </div>
+          <div class="meal-form-actions">
+            <button id="saveMealItemButton" class="primary-button" type="submit" disabled>เพิ่มรายการ</button>
+            <button id="cancelMealItem" class="secondary-button" type="button">ยกเลิก</button>
+          </div>
+        </form>
+      </section>
+    </section>
+
+    <section id="nutrition-summary" class="section feature-status-section" aria-labelledby="nutritionSummaryTitle">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">NUTRITION SUMMARY</span>
+          <h2 id="nutritionSummaryTitle">สรุปสารอาหาร</h2>
+          <p>ตรวจสอบประวัติมื้อและความพร้อมของข้อมูลก่อนสรุป</p>
+        </div>
+        <span class="section-emoji" aria-hidden="true">▤</span>
+      </div>
+      <form id="nutritionSummaryFilter" class="summary-filter-card">
+        <label>ตั้งแต่วันที่
+          <input id="summaryFromDate" type="date" required>
+        </label>
+        <label>ถึงวันที่
+          <input id="summaryToDate" type="date" required>
+        </label>
+        <button id="loadNutritionSummary" class="primary-button" type="submit">ดูสรุป</button>
+      </form>
+      <article id="summaryReadiness" class="summary-readiness" role="status" aria-live="polite">
+        <span class="summary-status-icon" aria-hidden="true">i</span>
+        <div>
+          <strong id="summaryReadinessTitle">กำลังตรวจสอบความพร้อมของข้อมูล</strong>
+          <p id="summaryReadinessMessage">ระบบจะไม่แสดงยอดสารอาหารจนกว่าข้อมูลและกฎจะผ่านการตรวจสอบ</p>
+        </div>
+      </article>
+      <p id="summaryMessage" class="message" role="status" aria-live="polite">กำลังโหลดสรุป...</p>
+      <div id="summaryMeals" class="summary-meals" aria-live="polite"></div>
+      <a class="secondary-button summary-diary-link" href="#myMeals">ไปยัง Food Diary</a>
+    </section>
+
+    <section id="nutrition-advisor" class="section feature-status-section" aria-labelledby="nutritionAdvisorTitle">
+      <div class="section-title">
+        <div>
+          <span class="eyebrow">AI NUTRITION ADVISOR</span>
+          <h2 id="nutritionAdvisorTitle">ผู้ช่วยด้านโภชนาการ</h2>
+          <p>คำตอบต้องอ้างอิงข้อมูลจริงและแสดงข้อจำกัด</p>
+        </div>
+        <span class="section-emoji" aria-hidden="true">✦</span>
+      </div>
+      <article class="feature-status-card" role="status">
+        <strong>ยังไม่เปิดใช้งาน AI Advisor</strong>
+        <p>Repository ปัจจุบันยังไม่มี AI provider หรือ API สำหรับคำแนะนำ จึงไม่มีการส่งข้อมูลโปรไฟล์หรือประวัติอาหารไปยังบริการภายนอก</p>
+        <a class="secondary-button" href="/my-profile">ดู Health Profile</a>
+      </article>
+    </section>
+
+
+    <section id="ai-chat" class="section ai-chat-section" aria-labelledby="aiChatTitle">
+      <div class="ai-chat-header">
+        <div>
+          <span class="eyebrow">YOUR AI CONVERSATION</span>
+          <h2 id="aiChatTitle">AI Chat</h2>
+          <p>เลือกผู้ให้บริการและพิมพ์คำถามที่ต้องการถามโดยตรง</p>
+        </div>
+        <span id="aiChatPlan" class="ai-chat-plan">กำลังตรวจสอบแผน</span>
+      </div>
+
+      <div id="aiChatNotice" class="ai-chat-notice" role="status" aria-live="polite">
+        กำลังตรวจสอบบัญชีและความพร้อมของ AI Chat...
+      </div>
+
+      <div id="aiChatConsentPanel" class="ai-chat-consent hidden">
+        <h3>ความยินยอมในการใช้ AI Chat</h3>
+        <p>
+          เมื่อใช้ AI Chat ข้อความที่คุณพิมพ์จะถูกส่งไปยังผู้ให้บริการ AI
+          ที่คุณเลือก ได้แก่ Google Gemini หรือ OpenAI เพื่อสร้างคำตอบ
+          ผู้ให้บริการอาจประมวลผลข้อมูลตามข้อกำหนดและนโยบายของตน
+        </p>
+        <p>
+          อย่าส่งรหัสผ่าน ข้อมูลระบุตัวตนที่ไม่จำเป็น หรือข้อมูลสุขภาพที่ละเอียดอ่อน
+          ระบบจะไม่แนบโปรไฟล์หรือประวัติอาหารให้โดยอัตโนมัติ
+        </p>
+        <label class="ai-chat-consent-check">
+          <input id="aiChatConsentCheck" type="checkbox">
+          <span>ฉันเข้าใจข้อมูลข้างต้นและยินยอมให้ประมวลผลข้อความที่ฉันส่งผ่าน AI Chat</span>
+        </label>
+        <button id="aiChatConsentButton" type="button" disabled>
+          ยินยอมและเริ่มใช้ AI Chat
+        </button>
+      </div>
+
+      <div id="aiChatWorkspace" class="ai-chat-workspace hidden">
+        <div class="ai-chat-controls">
+          <label for="aiChatProvider">ผู้ให้บริการ AI</label>
+          <select id="aiChatProvider">
+            <option value="gemini">Google Gemini</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <p id="aiChatQuota" class="ai-chat-quota"></p>
+        </div>
+
+        <div id="aiChatMessages" class="ai-chat-messages"
+             role="log" aria-live="polite" aria-relevant="additions"></div>
+
+        <form id="aiChatForm" class="ai-chat-form">
+          <label for="aiChatInput">ข้อความของคุณ</label>
+          <textarea id="aiChatInput" maxlength="4000" rows="3"
+                    placeholder="พิมพ์คำถามที่ต้องการถาม..." required></textarea>
+          <div class="ai-chat-form-footer">
+            <small>สูงสุด 4,000 ตัวอักษร · ส่งเฉพาะข้อความนี้</small>
+            <button id="aiChatSend" type="submit">ส่งข้อความ</button>
+          </div>
+        </form>
+
+        <button id="aiChatWithdraw" class="ai-chat-withdraw" type="button">
+          ถอนความยินยอมและปิด AI Chat
+        </button>
+      </div>
     </section>
 
     <section id="foods" class="section">
@@ -106,53 +365,143 @@
       <div id="nutritionPanel" class="nutrition-panel hidden"></div>
     </section>
 
-
     <section id="barcodeSection" class="section">
       <div class="section-title">
         <div>
           <span class="eyebrow">SCAN & IDENTIFY</span>
           <h2>เพิ่มอาหารด้วยรหัสหรือภาพ</h2>
-          <p>สแกน Barcode/QR Code หรือกรอกรหัสเพื่อตรวจสอบอาหาร</p>
+          <p>ค้นหาสินค้าด้วยบาร์โค้ด หรือเลือกรูปอาหารที่ไม่มีบาร์โค้ด</p>
         </div>
         <span class="section-emoji">📷</span>
       </div>
 
       <div class="scanner-card">
+        <!-- ค้นหาด้วย Barcode -->
         <form id="barcodeForm" class="barcode-form">
           <label for="barcodeInput">Barcode หรือรหัสสินค้า</label>
           <div class="barcode-input-row">
-            <input id="barcodeInput" type="text"
+            <input
+              id="barcodeInput"
+              type="text"
               placeholder="กรอกรหัสบนบรรจุภัณฑ์"
-              autocomplete="off" maxlength="128" required>
+              autocomplete="off"
+              maxlength="128"
+              required
+            >
             <button type="submit">ค้นหารหัส</button>
           </div>
         </form>
 
         <div class="scanner-actions">
-          <button id="startScannerBtn" type="button" class="secondary-button">
+          <button
+            id="startScannerBtn"
+            type="button"
+            class="secondary-button"
+          >
             เปิดกล้องสแกน
           </button>
-          <button id="stopScannerBtn" type="button"
-            class="secondary-button" disabled>ปิดกล้อง</button>
+          <button
+            id="stopScannerBtn"
+            type="button"
+            class="secondary-button"
+            disabled
+          >
+            ปิดกล้อง
+          </button>
         </div>
 
-        <video id="scannerVideo" class="scanner-video hidden"
-          autoplay muted playsinline aria-label="ภาพจากกล้องสำหรับสแกน"></video>
+        <video
+          id="scannerVideo"
+          class="scanner-video hidden"
+          autoplay
+          muted
+          playsinline
+          aria-label="ภาพจากกล้องสำหรับสแกน"
+        ></video>
+
         <p id="scannerMessage" class="message" aria-live="polite">
-          กรอกรหัสเพื่อค้นหาได้ หรือเปิดกล้องบนอุปกรณ์ที่รองรับ
+          กรอกรหัสหรือเปิดกล้องเพื่อค้นหาสินค้า
         </p>
 
-        <div id="barcodeResult" class="barcode-result hidden"
-          aria-live="polite"></div>
+        <div
+          id="barcodeResult"
+          class="barcode-result hidden"
+          aria-live="polite"
+        ></div>
 
+        <!-- ค้นหาอาหารจากภาพ -->
         <div class="image-picker">
-          <label for="foodImageInput">หรือเลือก/ถ่ายภาพอาหารหรือฉลาก</label>
-          <input id="foodImageInput" type="file"
-            accept="image/*" capture="environment">
-          <img id="foodImagePreview" class="image-preview hidden"
-            alt="ตัวอย่างภาพที่เลือก">
-          <p id="imageMessage" class="subtext">
-            ภาพจะแสดงตัวอย่างในหน้านี้ ขั้นนี้ยังไม่ได้อ่านข้อความด้วย OCR
+          <div class="section-title">
+            <div>
+              <span class="eyebrow">FOOD PHOTO</span>
+              <h3>อาหารที่ไม่มีบาร์โค้ด</h3>
+              <p>ถ่ายภาพหรือเลือกรูปอาหารจากอุปกรณ์ของคุณ</p>
+            </div>
+            <span class="section-emoji">🍱</span>
+          </div>
+
+          <label for="foodImageInput">ถ่ายภาพหรือเลือกรูปอาหาร (JPEG, PNG, WebP)</label>
+          <input
+            id="foodImageInput"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+          >
+
+          <div class="food-image-actions">
+            <button id="removeFoodImageBtn" class="secondary-button" type="button" disabled>
+              นำภาพออก
+            </button>
+          </div>
+
+          <img
+            id="foodImagePreview"
+            class="image-preview hidden"
+            alt="ตัวอย่างภาพอาหารที่เลือก"
+          >
+
+          <p id="imageMessage" class="subtext" aria-live="polite">
+            เลือกภาพ JPEG, PNG หรือ WebP ขนาดไม่เกิน 10 MB ภาพจะถูกส่งไปวิเคราะห์เมื่อยินยอมและกดปุ่มเท่านั้น
+          </p>
+
+          <label class="food-image-consent" for="foodImageConsent">
+            <input id="foodImageConsent" type="checkbox">
+            <span>ฉันยินยอมส่งภาพนี้ไปยังผู้ให้บริการ AI ภายนอกเพื่อระบุอาหาร ภาพจะไม่ถูกบันทึกโดย NourivaAI</span>
+          </label>
+          <button id="analyzeFoodImageBtn" class="primary-button" type="button" disabled>
+            วิเคราะห์ภาพอาหาร
+          </button>
+
+          <section id="foodImageAnalysisOutput" class="food-image-analysis hidden" aria-live="polite" aria-labelledby="foodImageAnalysisTitle">
+            <h4 id="foodImageAnalysisTitle">ผลวิเคราะห์ภาพ · ข้อเสนอจาก AI</h4>
+            <div id="foodImageAnalysisContent"></div>
+          </section>
+
+          <div class="image-food-search">
+            <label for="imageFoodSearch">ค้นหาชื่ออาหารในภาพ</label>
+
+            <div class="barcode-input-row">
+              <input
+                id="imageFoodSearch"
+                type="search"
+                placeholder="เช่น ข้าวผัด ไข่ต้ม หรือ Nutella"
+                autocomplete="off"
+              >
+              <button id="imageFoodSearchBtn" type="button">
+                ค้นหาอาหาร
+              </button>
+            </div>
+
+            <p id="imageFoodMessage" class="message" aria-live="polite">
+              เลือกภาพแล้วพิมพ์ชื่ออาหารเพื่อค้นหาในคลัง
+            </p>
+
+            <div id="imageFoodResults" class="food-list"></div>
+          </div>
+
+          <p class="notice">
+            ผลระบุอาหารและปริมาณจากภาพเป็นเพียงข้อเสนอ ต้องตรวจสอบก่อนบันทึก
+            และจะไม่ใช้คำนวณสารอาหารจนกว่าข้อมูลและกฎที่เกี่ยวข้องผ่านการอนุมัติ
           </p>
         </div>
       </div>
@@ -189,21 +538,9 @@
     </footer>
   </main>
 
-  <nav class="bottom-nav" aria-label="เมนูหลัก">
-    <a class="nav-item active" href="#home">
-      <span>⌂</span><small>หน้าหลัก</small>
-    </a>
-    <a class="nav-item" href="#foods">
-      <span>⌕</span><small>ค้นหาอาหาร</small>
-    </a>
-    <a class="nav-item" href="#rules">
-      <span>▣</span><small>กฎของระบบ</small>
-    </a>
-    <a class="nav-item" href="/docs" target="_blank">
-      <span>↗</span><small>API Docs</small>
-    </a>
-  </nav>
-
   <script src="/static/app.js"></script>
+  <script src="/static/meal-manager.js"></script>
+  <script src="/static/nutrition-summary.js"></script>
+  <script src="/static/ai-chat.js"></script>
 </body>
 </html>

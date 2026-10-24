@@ -27,3 +27,7 @@ htmlcov/
 backups/
 *.dump
 *.sql.bak
+
+# Additional local source-check backups
+*.bak-before-*
+*.source_check_backup*
