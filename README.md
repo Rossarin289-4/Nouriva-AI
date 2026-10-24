@@ -140,6 +140,22 @@ python -m pytest -v
 - ข้อมูลที่ใช้ในการประเมินต้องมีแหล่งที่มาและหน่วยที่เหมาะสม
 - ผลการประเมินควรแสดงข้อจำกัดเมื่อข้อมูลไม่เพียงพอ
 
+### Open Food Facts barcode lookup (optional)
+
+The backend can look up a barcode in Open Food Facts after the internal food
+catalog has no match. Configure `NOURIVAAI_OPENFOODFACTS_USER_AGENT` as a
+descriptive value such as `NourivaAI/0.1 (contact@example.org)`; without it,
+external lookup is disabled. The backend applies a short timeout and temporary
+in-memory cache. External results are returned as unverified references and are
+not saved to the NourivaAI database or used for nutrient calculations.
+
+Open Food Facts documents limits of 15 product-read requests per minute per IP
+and 10 search requests per minute per IP; the current NourivaAI integration
+does barcode product reads only and must not be wired to typeahead search.
+The database is under ODbL, individual contents under the Database Contents
+License, and images under CC BY-SA. Keep source attribution and review the
+source's current reuse terms before redistributing imported data or images.
+
 ## Scope
 
 NourivaAI มุ่งเน้นการช่วยบันทึกอาหาร คำนวณสารอาหาร และสนับสนุนการประเมินโภชนาการจากข้อมูลที่มี ไม่ใช่ระบบวินิจฉัยโรคหรือทดแทนคำแนะนำจากบุคลากรทางการแพทย์

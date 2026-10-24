@@ -911,6 +911,46 @@ def test_reviewed_food_with_unreviewed_basis_does_not_calculate(client):
     assert fake_db.execute_count == 3
 
 
+def test_unverified_openfoodfacts_food_never_calculates(client):
+    """An externally imported product must fail verification before nutrient reads."""
+    food_id = "8d78d477-67c6-4272-92a6-5495e114402e"
+    fake_db = FakeDB([
+        FakeResult({
+            "food_id": food_id,
+            "name_th": None,
+            "name_en": "Nutella",
+            "brand_name": "Ferrero",
+            "verification_status": "unverified",
+        }),
+        FakeResult({
+            "nutrition_basis_id": "external-basis-test",
+            "basis_type": "per_100g",
+            "basis_quantity": 100,
+            "basis_unit": "g",
+            "source_kind": "database",
+            "verification_status": "reviewed",
+        }),
+        FakeResult({
+            "rule_code": "NUT-001",
+            "rule_name": "คำนวณจากค่าต่อ 100 กรัม",
+            "lifecycle_status": "active",
+            "decision_logic": "consumed = per_100g * weight / 100",
+        }),
+    ])
+    app.dependency_overrides[get_db] = lambda: fake_db
+
+    response = client.post(
+        "/nutrition/calculate-from-food",
+        json={"food_id": food_id, "eaten_weight_g": 25},
+    )
+
+    data = response.json()
+    assert response.status_code == 200
+    assert data["status"] == "data_needs_review"
+    assert "nutrients" not in data
+    assert fake_db.execute_count == 3
+
+
 def test_calculate_returns_404_when_rule_missing(client):
     """ไม่พบ NUT-001 ต้องไม่คำนวณ."""
     app.dependency_overrides[get_db] = lambda: FakeDB([

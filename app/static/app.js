@@ -19,6 +19,160 @@ function setStatus(id, message, ok) {
   $(id).style.color = ok ? "#076653" : "#B4533C";
 }
 
+function setDashboardGreeting(name = "") {
+  const heading = $("dashboardGreeting");
+  const mascot = document.createElement("span");
+  mascot.textContent = "🌱";
+  mascot.setAttribute("aria-hidden", "true");
+  heading.replaceChildren(
+    document.createTextNode(name ? `สวัสดี ${name}! วันนี้` : "สวัสดี! วันนี้"),
+    document.createElement("br"),
+    document.createTextNode("เรามาดูแลตัวเองกัน "),
+    mascot
+  );
+}
+
+function updateDashboardDateTime() {
+  const formatter = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    dateStyle: "full",
+    timeStyle: "short",
+  });
+  $("dashboardDateTime").textContent = formatter.format(new Date());
+}
+
+function setLoggedOutState(message = "ยังไม่ได้เข้าสู่ระบบ") {
+  $("authStatus").textContent = message;
+  $("loginNav").classList.remove("hidden");
+  $("profileNav").classList.add("hidden");
+  $("logoutButton").classList.add("hidden");
+  setDashboardGreeting();
+  renderDashboardMeals({ state: "unauthenticated" });
+}
+
+async function loadAuthenticationStatus() {
+  try {
+    const response = await fetch("/auth/me", { credentials: "same-origin" });
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      setLoggedOutState();
+      return;
+    }
+    if (!response.ok || !data.user) {
+      throw new Error("ตรวจสอบบัญชีไม่สำเร็จ");
+    }
+
+    const displayName = data.user.profile?.display_name || data.user.email || "บัญชีผู้ใช้";
+    $("authStatus").textContent = `เข้าสู่ระบบ: ${displayName}`;
+    setDashboardGreeting(displayName);
+    $("loginNav").classList.add("hidden");
+    $("profileNav").classList.remove("hidden");
+    $("logoutButton").classList.remove("hidden");
+  } catch (error) {
+    setLoggedOutState("ตรวจสอบสถานะบัญชีไม่ได้");
+  }
+}
+
+function formatDashboardMealDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return "ไม่ระบุวันที่";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "medium" }).format(date);
+}
+
+function renderDashboardMeals(detail = {}) {
+  const message = $("dashboardMealsMessage");
+  const list = $("dashboardRecentMeals");
+  const state = detail.state || "loading";
+  list.replaceChildren();
+  message.className = "dashboard-meals-message";
+  message.setAttribute("aria-busy", state === "loading" ? "true" : "false");
+
+  const messages = {
+    loading: "กำลังโหลดมื้ออาหาร...",
+    unauthenticated: "เข้าสู่ระบบเพื่อดูมื้ออาหารส่วนตัวของคุณ",
+    empty: "ยังไม่มีมื้ออาหารที่บันทึกไว้ เริ่มบันทึกมื้อแรกของคุณได้เลย",
+    error: "โหลดมื้ออาหารไม่สำเร็จ ลองอีกครั้งได้",
+  };
+  if (state !== "success") {
+    message.textContent = messages[state] || messages.error;
+    if (state === "unauthenticated") {
+      const login = document.createElement("a");
+      login.href = "/login";
+      login.className = "welcome-secondary-action";
+      login.textContent = "เข้าสู่ระบบ";
+      list.appendChild(login);
+    } else if (state === "empty") {
+      const link = document.createElement("a");
+      link.href = "#myMeals";
+      link.className = "welcome-secondary-action";
+      link.textContent = "บันทึกมื้ออาหาร";
+      list.appendChild(link);
+    } else if (state === "error") {
+      message.classList.add("error");
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.className = "secondary-button";
+      retry.textContent = "ลองอีกครั้ง";
+      retry.addEventListener("click", () => window.loadMealHistory?.());
+      list.appendChild(retry);
+    }
+    return;
+  }
+
+  const items = Array.isArray(detail.items) ? detail.items.slice(0, 3) : [];
+  if (!items.length) {
+    renderDashboardMeals({ state: "empty" });
+    return;
+  }
+  message.textContent = detail.dateFilter
+    ? "มื้ออาหารในวันที่เลือก"
+    : "มื้ออาหารล่าสุดจาก Food Diary";
+  items.forEach((meal) => {
+    const row = document.createElement("li");
+    row.className = "dashboard-recent-meal";
+    const title = document.createElement("strong");
+    title.textContent = meal.title || ({ breakfast: "อาหารเช้า", lunch: "อาหารกลางวัน", dinner: "อาหารเย็น", snack: "ของว่าง", other: "อื่น ๆ" }[meal.meal_type] || meal.meal_type || "มื้ออาหาร");
+    const date = document.createElement("small");
+    date.textContent = formatDashboardMealDate(meal.meal_date);
+    row.append(title, date);
+    list.appendChild(row);
+  });
+}
+
+window.addEventListener("nouriva:meal-history", (event) => {
+  renderDashboardMeals(event.detail || {});
+});
+
+$("logoutButton").addEventListener("click", async () => {
+  const button = $("logoutButton");
+  button.disabled = true;
+  button.textContent = "กำลังออกจากระบบ...";
+  try {
+    const response = await fetch("/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error("ออกจากระบบไม่สำเร็จ");
+    setLoggedOutState("ออกจากระบบแล้ว");
+    if (typeof window.loadMealHistory === "function") {
+      await window.loadMealHistory();
+    }
+    if (typeof window.refreshNutritionSummary === "function") {
+      await window.refreshNutritionSummary();
+    }
+  } catch (error) {
+    $("authStatus").textContent = error.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "ออกจากระบบ";
+  }
+});
+
+updateDashboardDateTime();
+setInterval(updateDashboardDateTime, 60 * 1000);
+loadAuthenticationStatus();
+
 function ruleStatusClass(status) {
   if (status === "active") return "good";
   if (["draft", "reviewed", "needs_review",
@@ -106,8 +260,9 @@ function renderFoods(items) {
   items.forEach((food) => {
     const name = food.name_th || food.name_en || "ไม่ระบุชื่อ";
     const status = food.verification_status || "unverified";
-    const isVerified = ["reviewed", "source_verified",
-      "user_confirmed"].includes(status);
+    // Food-item verification statuses are constrained by the database to
+    // reviewed/source_verified before they can be presented as trusted.
+    const isVerified = ["reviewed", "source_verified"].includes(status);
 
     const row = document.createElement("article");
     row.className = "food-item";
@@ -526,26 +681,426 @@ $("searchForm").addEventListener("submit", (event) => {
   searchFoods($("searchInput").value);
 });
 
-$("refreshBtn").addEventListener("click", loadDashboard);
+$("refreshBtn").addEventListener("click", () => {
+  loadDashboard();
+  loadAuthenticationStatus();
+  if (typeof window.loadMealHistory === "function") window.loadMealHistory();
+});
 
 document.querySelectorAll(".nav-item").forEach((item) => {
   item.addEventListener("click", () => {
     document.querySelectorAll(".nav-item")
-      .forEach((nav) => nav.classList.remove("active"));
+      .forEach((nav) => {
+        nav.classList.remove("active");
+        nav.removeAttribute("aria-current");
+      });
     item.classList.add("active");
+    item.setAttribute("aria-current", "page");
   });
 });
 
 
 
-// Barcode lookup: query only existing, active foods in the backend.
+let barcodeLookupRequest = 0;
+
+function appendExternalFoodDiaryAction(container, externalData, barcode) {
+  const item = externalData.item || {};
+  const source = externalData.source || {};
+  const panel = document.createElement("section");
+  panel.className = "barcode-diary-panel";
+  const heading = document.createElement("h4");
+  heading.textContent = "เพิ่มสินค้าลง Food Diary";
+  const safety = document.createElement("p");
+  safety.className = "notice";
+  safety.textContent = "ข้อมูลจาก Open Food Facts ยังไม่ผ่านการตรวจสอบ จะบันทึกเป็นรายการ unverified และไม่ใช้คำนวณสารอาหาร";
+  const openButton = document.createElement("button");
+  openButton.type = "button";
+  openButton.className = "primary-button";
+  openButton.textContent = "เพิ่มลงมื้ออาหาร";
+  const message = document.createElement("p");
+  message.className = "message";
+  message.setAttribute("role", "status");
+  message.setAttribute("aria-live", "polite");
+  const form = document.createElement("form");
+  form.className = "barcode-diary-form hidden";
+  // This form contains required fields inside a conditionally hidden "new meal"
+  // section. Native validation blocks submit events for those hidden controls,
+  // so validate explicitly in the submit handler and show an inline message.
+  form.noValidate = true;
+  const createMealPanel = document.createElement("div");
+  createMealPanel.className = "barcode-new-meal hidden";
+  const meals = new Map();
+  let saving = false;
+  let creatingMeal = false;
+  let added = false;
+
+  const appendField = (parent, labelText, input, id) => {
+    const field = document.createElement("div");
+    field.className = "meal-field";
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = labelText;
+    input.id = id;
+    field.append(label, input);
+    parent.appendChild(field);
+  };
+  const makeSelect = (id, placeholder, options) => {
+    const select = document.createElement("select");
+    select.id = id;
+    select.required = true;
+    const empty = document.createElement("option");
+    empty.value = "";
+    empty.textContent = placeholder;
+    empty.disabled = true;
+    empty.selected = true;
+    select.appendChild(empty);
+    options.forEach(([value, text]) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      select.appendChild(option);
+    });
+    return select;
+  };
+  const requestJSON = async (url, options = {}) => {
+    const response = await fetch(url, {
+      credentials: "same-origin",
+      ...options,
+      headers: {
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(typeof body.detail === "string"
+        ? body.detail
+        : `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    return body;
+  };
+  const mealLabel = (meal) => {
+    const types = {
+      breakfast: "อาหารเช้า", lunch: "อาหารกลางวัน", dinner: "อาหารเย็น",
+      snack: "ของว่าง", other: "อื่น ๆ",
+    };
+    const title = meal.title || types[meal.meal_type] || meal.meal_type || "มื้ออาหาร";
+    return `${title} · ${meal.meal_date || "ไม่ระบุวันที่"}`;
+  };
+  const mealsSelect = makeSelect("barcodeTargetMeal", "เลือกมื้ออาหาร", []);
+  const mealOptions = document.createElement("div");
+  mealOptions.className = "barcode-meal-options meal-form-grid";
+  appendField(mealOptions, "มื้ออาหาร", mealsSelect, "barcodeTargetMeal");
+  const newMealDate = document.createElement("input");
+  newMealDate.type = "date";
+  newMealDate.required = true;
+  const nowParts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const dateParts = Object.fromEntries(nowParts.map(({ type, value }) => [type, value]));
+  newMealDate.value = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+  const newMealType = makeSelect("barcodeNewMealType", "เลือกประเภทมื้อ", [
+    ["breakfast", "อาหารเช้า"], ["lunch", "อาหารกลางวัน"],
+    ["dinner", "อาหารเย็น"], ["snack", "ของว่าง"], ["other", "อื่น ๆ"],
+  ]);
+  const newMealTime = document.createElement("input");
+  newMealTime.type = "time";
+  const newMealTitle = document.createElement("input");
+  newMealTitle.type = "text";
+  newMealTitle.maxLength = 200;
+  appendField(createMealPanel, "วันที่ (เวลาไทย)", newMealDate, "barcodeNewMealDate");
+  appendField(createMealPanel, "ประเภทมื้อ", newMealType, "barcodeNewMealType");
+  appendField(createMealPanel, "เวลา (ถ้ามี)", newMealTime, "barcodeNewMealTime");
+  appendField(createMealPanel, "ชื่อมื้อ (ถ้ามี)", newMealTitle, "barcodeNewMealTitle");
+  const createMealButton = document.createElement("button");
+  createMealButton.type = "button";
+  createMealButton.className = "secondary-button";
+  createMealButton.textContent = "สร้างมื้ออาหาร";
+  createMealPanel.appendChild(createMealButton);
+
+  const quantity = document.createElement("input");
+  quantity.type = "number";
+  quantity.min = "0.001";
+  quantity.step = "0.001";
+  quantity.inputMode = "decimal";
+  quantity.required = true;
+  const unit = makeSelect("barcodeQuantityUnit", "เลือกหน่วย", [
+    ["g", "กรัม"], ["ml", "มิลลิลิตร"], ["piece", "ชิ้น"],
+    ["serving", "หน่วยบริโภค"], ["package", "แพ็ก"],
+  ]);
+  const quantityFields = document.createElement("div");
+  quantityFields.className = "meal-form-grid";
+  appendField(quantityFields, "ปริมาณที่รับประทาน", quantity, "barcodeQuantity");
+  appendField(quantityFields, "หน่วย", unit, "barcodeQuantityUnit");
+  const notes = document.createElement("textarea");
+  notes.maxLength = 2000;
+  notes.rows = 2;
+  appendField(quantityFields, "บันทึกเพิ่มเติม (ถ้ามี)", notes, "barcodeItemNotes");
+  const review = document.createElement("div");
+  review.className = "barcode-confirmation-summary";
+  review.setAttribute("aria-live", "polite");
+  const confirmationLabel = document.createElement("label");
+  confirmationLabel.className = "barcode-confirmation-label";
+  const confirmation = document.createElement("input");
+  confirmation.type = "checkbox";
+  confirmation.required = true;
+  const confirmationText = document.createElement("span");
+  confirmationText.textContent = "ตรวจสอบชื่อมื้อ ปริมาณ และหน่วยแล้ว ยืนยันเพิ่มรายการนี้";
+  confirmationLabel.append(confirmation, confirmationText);
+  const submit = document.createElement("button");
+  submit.type = "submit";
+  submit.className = "primary-button";
+  submit.textContent = "ยืนยันและบันทึกลง Food Diary";
+  submit.disabled = true;
+  form.append(mealOptions, createMealPanel, quantityFields, review, confirmationLabel, submit);
+  panel.append(heading, safety, openButton, message, form);
+  container.appendChild(panel);
+
+  const refreshSummary = () => {
+    review.replaceChildren();
+    const meal = meals.get(mealsSelect.value);
+    const amount = Number(quantity.value);
+    const unitText = unit.selectedOptions[0]?.textContent || "ยังไม่เลือกหน่วย";
+    [
+      `สินค้า: ${item.name || "ไม่ระบุชื่อ"}${item.brand_name ? ` · ${item.brand_name}` : ""}`,
+      `Barcode: ${barcode}`,
+      `มื้อ: ${meal ? mealLabel(meal) : "ยังไม่เลือกมื้ออาหาร"}`,
+      `ปริมาณที่กิน: ${Number.isFinite(amount) && amount > 0 ? `${amount} ${unitText}` : "ยังไม่ระบุ"}`,
+      "สถานะข้อมูล: external_unverified · รายการจะรอตรวจสอบ",
+    ].forEach((text) => {
+      const line = document.createElement("p");
+      line.textContent = text;
+      review.appendChild(line);
+    });
+    submit.disabled = added || saving;
+  };
+
+  openButton.addEventListener("click", async () => {
+    if (saving || added || container.dataset.barcode !== barcode) return;
+    openButton.disabled = true;
+    message.textContent = "กำลังโหลดมื้ออาหารของคุณ...";
+    try {
+      const data = await requestJSON("/meals?limit=100&offset=0");
+      if (container.dataset.barcode !== barcode) return;
+      if (!Array.isArray(data.items)) throw new Error("รูปแบบรายการมื้ออาหารไม่ถูกต้อง");
+      mealsSelect.replaceChildren();
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "เลือกมื้ออาหาร";
+      blank.disabled = true;
+      blank.selected = true;
+      mealsSelect.appendChild(blank);
+      data.items.forEach((meal) => {
+        if (typeof meal.meal_log_id !== "string") return;
+        meals.set(meal.meal_log_id, meal);
+        const option = document.createElement("option");
+        option.value = meal.meal_log_id;
+        option.textContent = mealLabel(meal);
+        mealsSelect.appendChild(option);
+      });
+      const newOption = document.createElement("option");
+      newOption.value = "__new__";
+      newOption.textContent = "สร้างมื้อใหม่…";
+      mealsSelect.appendChild(newOption);
+      form.classList.remove("hidden");
+      message.textContent = data.items.length
+        ? "เลือกมื้ออาหาร หรือสร้างมื้อใหม่ แล้วระบุปริมาณที่กินด้วยตนเอง"
+        : "ยังไม่มีมื้ออาหาร เลือกสร้างมื้อใหม่เพื่อดำเนินการต่อ";
+      openButton.textContent = "เลือกมื้ออาหาร";
+      openButton.disabled = true;
+    } catch (error) {
+      if (container.dataset.barcode !== barcode) return;
+      message.textContent = error.status === 401
+        ? "กรุณาเข้าสู่ระบบก่อนเพิ่มอาหารลง Food Diary"
+        : `โหลดมื้ออาหารไม่สำเร็จ: ${error.message}`;
+      if (error.status === 401 && !panel.querySelector(".barcode-login-link")) {
+        const login = document.createElement("a");
+        login.href = "/login";
+        login.className = "barcode-login-link";
+        login.textContent = "เข้าสู่ระบบ";
+        panel.appendChild(login);
+      }
+      openButton.disabled = false;
+    }
+  });
+
+  mealsSelect.addEventListener("change", () => {
+    createMealPanel.classList.toggle("hidden", mealsSelect.value !== "__new__");
+    refreshSummary();
+  });
+  createMealButton.addEventListener("click", async () => {
+    if (creatingMeal || mealsSelect.value !== "__new__") return;
+    if (!newMealDate.value || !newMealType.value) {
+      message.textContent = "กรุณาระบุวันที่และประเภทมื้ออาหาร";
+      return;
+    }
+    creatingMeal = true;
+    createMealButton.disabled = true;
+    try {
+      const date = newMealDate.value;
+      const time = newMealTime.value;
+      const data = await requestJSON("/meals", {
+        method: "POST",
+        body: JSON.stringify({
+          meal_date: date,
+          meal_type: newMealType.value,
+          eaten_at: time ? `${date}T${time}:00+07:00` : null,
+          title: newMealTitle.value.trim() || null,
+        }),
+      });
+      if (!data.meal || typeof data.meal.meal_log_id !== "string") {
+        throw new Error("ไม่พบข้อมูลมื้อที่สร้าง");
+      }
+      meals.set(data.meal.meal_log_id, data.meal);
+      const option = document.createElement("option");
+      option.value = data.meal.meal_log_id;
+      option.textContent = mealLabel(data.meal);
+      mealsSelect.insertBefore(option, mealsSelect.querySelector('option[value="__new__"]'));
+      mealsSelect.value = data.meal.meal_log_id;
+      createMealPanel.classList.add("hidden");
+      message.textContent = "สร้างมื้อแล้ว ยังไม่มีการเพิ่มสินค้าจนกว่าจะยืนยันด้านล่าง";
+      refreshSummary();
+      window.loadMealHistory?.();
+    } catch (error) {
+      message.textContent = `สร้างมื้ออาหารไม่สำเร็จ: ${error.message}`;
+    } finally {
+      creatingMeal = false;
+      createMealButton.disabled = false;
+    }
+  });
+
+  [quantity, unit, confirmation, notes].forEach((control) => {
+    control.addEventListener("input", refreshSummary);
+    control.addEventListener("change", refreshSummary);
+  });
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (saving) {
+      message.textContent = "กำลังบันทึกรายการอาหาร กรุณารอสักครู่";
+      return;
+    }
+    if (added) {
+      message.textContent = "รายการนี้บันทึกแล้ว ไม่สามารถบันทึกซ้ำจากฟอร์มนี้ได้";
+      return;
+    }
+    if (!confirmation.checked) {
+      message.textContent = "กรุณาติ๊กยืนยันว่าตรวจสอบมื้อ ปริมาณ และหน่วยแล้ว";
+      confirmation.focus();
+      return;
+    }
+    const meal = meals.get(mealsSelect.value);
+    const amountText = quantity.value.trim();
+    const amount = Number(amountText);
+    if (!meal) {
+      message.textContent = mealsSelect.value === "__new__"
+        ? "กรุณาสร้างมื้ออาหารก่อนเพิ่มสินค้า"
+        : "กรุณาเลือกมื้ออาหาร";
+      mealsSelect.focus();
+      return;
+    }
+    if (!amountText || !Number.isFinite(amount) || amount <= 0
+        || !/^\d+(?:\.\d{1,3})?$/.test(amountText)) {
+      message.textContent = "กรุณาระบุปริมาณมากกว่า 0 โดยใช้ตัวเลขไม่เกิน 3 ตำแหน่งทศนิยม";
+      quantity.focus();
+      return;
+    }
+    if (!unit.value) {
+      message.textContent = "กรุณาเลือกหน่วยของปริมาณที่รับประทาน";
+      unit.focus();
+      return;
+    }
+    saving = true;
+    submit.disabled = true;
+    message.textContent = "กำลังบันทึกรายการอาหาร...";
+    let saved;
+    try {
+      saved = await requestJSON(
+        `/meals/${encodeURIComponent(meal.meal_log_id)}/external-items`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            barcode,
+            quantity_value: amount,
+            quantity_unit: unit.value,
+            confirm_add: true,
+            notes: notes.value.trim() || null,
+          }),
+        },
+      );
+      if (saved.status !== "success" || !saved.item) {
+        throw new Error("ระบบตอบกลับโดยไม่มีข้อมูลยืนยันการบันทึก");
+      }
+      if (String(saved.item.meal_log_id) !== String(meal.meal_log_id)) {
+        const mismatch = new Error("มื้ออาหารที่ API ตอบกลับไม่ตรงกับมื้อที่เลือก กรุณาตรวจสอบ Food Diary ก่อนลองใหม่");
+        mismatch.responseMismatch = true;
+        throw mismatch;
+      }
+      if (!saved.duplicate
+          && (Number(saved.item.quantity_value) !== amount
+            || saved.item.quantity_unit !== unit.value)) {
+        const mismatch = new Error("ปริมาณหรือหน่วยที่ API ตอบกลับไม่ตรงกับฟอร์ม กรุณาตรวจสอบ Food Diary ก่อนลองใหม่");
+        mismatch.responseMismatch = true;
+        throw mismatch;
+      }
+    } catch (error) {
+      message.textContent = error.responseMismatch
+        ? `พบข้อมูลตอบกลับไม่ตรงกัน: ${error.message}`
+        : `เพิ่มรายการไม่สำเร็จ: ${error.message}`;
+      saving = false;
+      if (error.responseMismatch) {
+        submit.disabled = true;
+        openButton.disabled = true;
+        form.classList.add("hidden");
+        await Promise.allSettled([
+          Promise.resolve().then(() => window.loadMealHistory?.()),
+          Promise.resolve().then(() => window.refreshNutritionSummary?.()),
+          Promise.resolve().then(() => window.refreshMealDetails?.(meal.meal_log_id)),
+        ]);
+        return;
+      }
+      refreshSummary();
+      return;
+    }
+
+    // Only report success after the server has confirmed the write.
+    added = true;
+    saving = false;
+    message.textContent = saved.duplicate
+      ? "สินค้านี้อยู่ในมื้อนี้แล้ว จึงไม่บันทึกซ้ำ"
+      : "เพิ่มรายการแล้ว · external_unverified · รายการรอตรวจสอบ";
+    openButton.disabled = true;
+    form.classList.add("hidden");
+    form.querySelectorAll("input, select, textarea, button").forEach((control) => {
+      control.disabled = true;
+    });
+    const refreshes = [
+      window.loadMealHistory,
+      window.refreshNutritionSummary,
+    ].filter((refresh) => typeof refresh === "function");
+    if (typeof window.refreshMealDetails === "function") {
+      refreshes.push(() => window.refreshMealDetails(meal.meal_log_id));
+    }
+    const refreshResults = await Promise.allSettled(
+      refreshes.map((refresh) => Promise.resolve().then(() => refresh())),
+    );
+    if (refreshResults.some((result) => result.status === "rejected")) {
+      message.textContent += " บันทึกแล้ว แต่รีเฟรชข้อมูลบางส่วนไม่สำเร็จ กรุณากดรีเฟรช";
+    }
+  });
+}
+
+// Search the local catalog first, then use an attributed external reference.
 async function lookupBarcode(rawCode) {
+  const requestId = ++barcodeLookupRequest;
   const code = rawCode.trim();
   const result = $("barcodeResult");
   const message = $("scannerMessage");
 
   result.classList.add("hidden");
   result.textContent = "";
+  result.dataset.barcode = code;
 
   if (!code) {
     message.textContent = "กรุณากรอกรหัส Barcode หรือ QR Code";
@@ -555,44 +1110,98 @@ async function lookupBarcode(rawCode) {
   message.textContent = "กำลังค้นหารหัสในคลังอาหาร...";
 
   try {
-    const response = await fetch(
+    let response = await fetch(
       `/foods/barcode/${encodeURIComponent(code)}`
     );
-    const data = await response.json().catch(() => ({}));
-
+    if (requestId !== barcodeLookupRequest) return;
+    let data = await response.json().catch(() => ({}));
     if (response.status === 404) {
-      message.textContent =
-        "ยังไม่มีข้อมูลสินค้านี้ในคลังอาหาร ลองค้นหาชื่ออาหารหรือกรอกรหัสอื่น";
-      return;
+      message.textContent = "ไม่พบในคลังภายใน กำลังค้นหา Open Food Facts...";
+      response = await fetch(
+        `/foods/external/openfoodfacts/barcode/${encodeURIComponent(code)}`
+      );
+      if (requestId !== barcodeLookupRequest) return;
+      data = await response.json().catch(() => ({}));
     }
 
     if (!response.ok) {
-      message.textContent =
-        data.detail || "ค้นหารหัสไม่สำเร็จ กรุณาลองอีกครั้ง";
+      message.textContent = response.status === 404
+        ? "ไม่พบรหัสนี้ทั้งในคลังภายในและ Open Food Facts"
+        : (data.detail || "ค้นหารหัสไม่สำเร็จ กรุณาลองอีกครั้ง");
       return;
     }
 
     const food = data.item || {};
-    const name = food.name_th || food.name_en || "ไม่ระบุชื่อ";
-    result.innerHTML = `
-      <h3>${escapeHTML(name)}</h3>
-      <p>แบรนด์: ${escapeHTML(food.brand_name || "ไม่ระบุ")}</p>
-      <p>Barcode: ${escapeHTML(food.barcode || code)}</p>
-      <p>ประเภท: ${escapeHTML(food.barcode_type || "ไม่ระบุ")}</p>
-      <p>สถานะข้อมูล: ${escapeHTML(
-        food.verification_status || "ไม่ระบุ"
-      )}</p>
-      <button id="barcodeNutritionBtn" type="button">
-        ดูข้อมูลสารอาหาร
-      </button>
-    `;
-    result.classList.remove("hidden");
-    message.textContent = "พบอาหารในคลังข้อมูลแล้ว";
+    const isExternal = data.status === "external_unverified";
+    const name = food.name_th || food.name_en || food.name || "ไม่ระบุชื่อ";
+    result.replaceChildren();
+    const heading = document.createElement("h3");
+    heading.textContent = name;
+    result.appendChild(heading);
+    const appendText = (label, value) => {
+      if (value === null || value === undefined || value === "") return;
+      const line = document.createElement("p");
+      line.textContent = `${label}: ${value}`;
+      result.appendChild(line);
+    };
+    appendText("แบรนด์", food.brand_name || "ไม่ระบุ");
+    appendText("Barcode", food.barcode || code);
+    appendText("ปริมาณบรรจุ", food.package_quantity);
+    appendText("สถานะข้อมูล", food.verification_status || "ไม่ระบุ");
 
-    $("barcodeNutritionBtn").addEventListener("click", () => {
-      loadNutrition(food.food_id, name);
-    });
+    if (isExternal) {
+      appendText("สถานะการตรวจสอบ", "ข้อมูลภายนอก ยังไม่ผ่านการตรวจสอบ");
+      const disclaimer = document.createElement("p");
+      disclaimer.className = "notice";
+      disclaimer.textContent = data.message ||
+        "ข้อมูลภายนอกใช้เป็นข้อมูลอ้างอิงเท่านั้น ยังไม่อนุญาตให้นำไปคำนวณ";
+      result.appendChild(disclaimer);
+      const nutrition = food.nutrition_reference_per_100g || {};
+      const nutrientKeys = Object.keys(nutrition);
+      if (nutrientKeys.length) {
+        const title = document.createElement("h4");
+        title.textContent = "ข้อมูลอ้างอิงจากแหล่งภายนอก (ต่อ 100 กรัมตามฟิลด์ต้นทาง)";
+        result.appendChild(title);
+        nutrientKeys.forEach((key) => appendText(key, nutrition[key]));
+      }
+      const source = data.source || {};
+      appendText("แหล่งข้อมูล", source.source_name);
+      appendText("ข้อกำหนดการอ้างอิง", source.license_or_attribution);
+      const sourceUrl = source.source_url;
+      if (typeof sourceUrl === "string") {
+        try {
+          const parsedUrl = new URL(sourceUrl);
+          if (parsedUrl.protocol === "https:" &&
+              parsedUrl.hostname === "world.openfoodfacts.org") {
+            const link = document.createElement("a");
+            link.href = parsedUrl.href;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = "เปิดรายการต้นทาง Open Food Facts";
+            result.appendChild(link);
+          }
+        } catch (error) {
+          // Ignore a malformed source URL rather than rendering it.
+        }
+      }
+      appendExternalFoodDiaryAction(result, data, code);
+    } else {
+      appendText("ประเภท", food.barcode_type || "ไม่ระบุ");
+      const nutritionButton = document.createElement("button");
+      nutritionButton.id = "barcodeNutritionBtn";
+      nutritionButton.type = "button";
+      nutritionButton.textContent = "ดูข้อมูลสารอาหาร";
+      nutritionButton.addEventListener("click", () => {
+        loadNutrition(food.food_id, name);
+      });
+      result.appendChild(nutritionButton);
+    }
+    result.classList.remove("hidden");
+    message.textContent = isExternal
+      ? "พบข้อมูลอ้างอิงภายนอก (ยังไม่ผ่านการตรวจสอบ)"
+      : "พบอาหารในคลังข้อมูลแล้ว";
   } catch (error) {
+    if (requestId !== barcodeLookupRequest) return;
     message.textContent =
       `เชื่อมต่อ API ไม่สำเร็จ: ${error.message}`;
   }
@@ -709,37 +1318,350 @@ $("stopScannerBtn").addEventListener("click", () => {
   $("scannerMessage").textContent = "ปิดกล้องแล้ว";
 });
 
+let foodImageObjectUrl = null;
+let currentFoodImageAnalysis = null;
+let selectedPhotoFood = null;
+let foodImageAnalysisRequestId = 0;
+
+function clearFoodPhotoPreview(message = "ยังไม่ได้เลือกภาพ") {
+  foodImageAnalysisRequestId += 1;
+  if (foodImageObjectUrl) URL.revokeObjectURL(foodImageObjectUrl);
+  foodImageObjectUrl = null;
+  currentFoodImageAnalysis = null;
+  selectedPhotoFood = null;
+  $("foodImageInput").value = "";
+  $("foodImagePreview").classList.add("hidden");
+  $("foodImagePreview").removeAttribute("src");
+  $("foodImageAnalysisOutput").replaceChildren();
+  $("foodImageAnalysisOutput").classList.add("hidden");
+  $("foodImageConsent").checked = false;
+  $("foodImageConsent").disabled = false;
+  $("analyzeFoodImageBtn").disabled = true;
+  $("removeFoodImageBtn").disabled = true;
+  $("imageMessage").textContent = message;
+}
+
 $("foodImageInput").addEventListener("change", () => {
+  foodImageAnalysisRequestId += 1;
   const file = $("foodImageInput").files?.[0];
   const preview = $("foodImagePreview");
   const message = $("imageMessage");
+  currentFoodImageAnalysis = null;
+  selectedPhotoFood = null;
+  $("foodImageAnalysisOutput").replaceChildren();
+  $("foodImageAnalysisOutput").classList.add("hidden");
+  $("foodImageConsent").checked = false;
+  if (foodImageObjectUrl) URL.revokeObjectURL(foodImageObjectUrl);
+  foodImageObjectUrl = null;
 
   if (!file) {
     preview.classList.add("hidden");
     preview.removeAttribute("src");
+    $("analyzeFoodImageBtn").disabled = true;
+    $("removeFoodImageBtn").disabled = true;
     message.textContent = "ยังไม่ได้เลือกภาพ";
     return;
   }
-
-  if (!file.type.startsWith("image/")) {
-    $("foodImageInput").value = "";
-    preview.classList.add("hidden");
-    message.textContent = "กรุณาเลือกไฟล์ภาพ";
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    clearFoodPhotoPreview("ชนิดไฟล์ไม่รองรับ กรุณาเลือก JPEG, PNG หรือ WebP");
     return;
   }
-
-  if (file.size > 10 * 1024 * 1024) {
-    $("foodImageInput").value = "";
-    preview.classList.add("hidden");
-    message.textContent = "ภาพใหญ่เกินไป กรุณาเลือกภาพขนาดไม่เกิน 10 MB";
+  if (file.size === 0 || file.size > 10 * 1024 * 1024) {
+    clearFoodPhotoPreview(file.size === 0
+      ? "ไฟล์ภาพว่างเปล่า กรุณาเลือกภาพใหม่"
+      : "ภาพใหญ่เกินไป กรุณาเลือกภาพขนาดไม่เกิน 10 MB");
     return;
   }
-
-  preview.src = URL.createObjectURL(file);
+  foodImageObjectUrl = URL.createObjectURL(file);
+  preview.src = foodImageObjectUrl;
   preview.classList.remove("hidden");
-  message.textContent =
-    `เลือกภาพแล้ว: ${file.name} — ยังไม่ได้ส่งภาพไป OCR หรือบันทึกลงระบบ`;
+  $("analyzeFoodImageBtn").disabled = false;
+  $("removeFoodImageBtn").disabled = false;
+  message.textContent = "ตรวจชนิดและขนาดไฟล์แล้ว ภาพจะถูกส่งเมื่อคุณยินยอมและกดวิเคราะห์";
 });
+
+$("removeFoodImageBtn").addEventListener("click", () => clearFoodPhotoPreview());
+
+$("analyzeFoodImageBtn").addEventListener("click", async () => {
+  const file = $("foodImageInput").files?.[0];
+  const button = $("analyzeFoodImageBtn");
+  const message = $("imageMessage");
+  if (!file || button.disabled) return;
+  if (!$("foodImageConsent").checked) {
+    message.textContent = "กรุณายินยอมก่อนส่งภาพไปยังผู้ให้บริการ AI ภายนอก";
+    $("foodImageConsent").focus();
+    return;
+  }
+  button.disabled = true;
+  const requestId = ++foodImageAnalysisRequestId;
+  selectedPhotoFood = null;
+  $("removeFoodImageBtn").disabled = true;
+  message.textContent = "กำลังวิเคราะห์ภาพ…";
+  $("foodImageAnalysisOutput").classList.add("hidden");
+  $("foodImageAnalysisContent").replaceChildren();
+  try {
+    const response = await fetch("/foods/image-analysis", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": file.type, "X-Food-Image-Consent": "true" },
+      body: file,
+    });
+    if (requestId !== foodImageAnalysisRequestId) return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(typeof data.detail === "string" ? data.detail : `HTTP ${response.status}`);
+      error.status = response.status;
+      throw error;
+    }
+    if (data.status !== "proposed" || !data.food_identification) {
+      throw new Error("รูปแบบผลวิเคราะห์ไม่ถูกต้อง");
+    }
+    currentFoodImageAnalysis = data;
+    renderFoodImageAnalysis(data);
+    message.textContent = "วิเคราะห์เสร็จแล้ว โปรดตรวจสอบและยืนยันข้อมูลก่อนบันทึก";
+  } catch (error) {
+    if (requestId !== foodImageAnalysisRequestId) return;
+    message.textContent = error.status === 401
+      ? "กรุณาเข้าสู่ระบบก่อนวิเคราะห์ภาพ"
+      : `วิเคราะห์ภาพไม่สำเร็จ: ${error.message}`;
+  } finally {
+    if (requestId === foodImageAnalysisRequestId) {
+      button.disabled = false;
+      $("removeFoodImageBtn").disabled = false;
+    }
+  }
+});
+
+function appendPhotoText(parent, tag, className, value) {
+  const element = document.createElement(tag);
+  if (className) element.className = className;
+  element.textContent = value;
+  parent.appendChild(element);
+  return element;
+}
+
+function renderFoodImageAnalysis(data) {
+  const output = $("foodImageAnalysisOutput");
+  const content = $("foodImageAnalysisContent");
+  content.replaceChildren();
+  const identification = data.food_identification || {};
+  appendPhotoText(content, "h5", "", identification.name || "ยังระบุชื่ออาหารไม่ได้");
+  appendPhotoText(content, "p", "food-image-confidence",
+    `ความมั่นใจในการระบุภาพ: ${identification.confidence || "ไม่ระบุ"} · ต้องให้ผู้ใช้ยืนยัน`);
+  if (Array.isArray(identification.components) && identification.components.length) {
+    appendPhotoText(content, "h6", "", "ส่วนประกอบที่มองเห็น (ข้อเสนอจาก AI)");
+    const list = document.createElement("ul");
+    identification.components.forEach((component) => appendPhotoText(list, "li", "", component));
+    content.appendChild(list);
+  }
+  const portion = data.portion_estimate;
+  appendPhotoText(content, "p", "food-image-portion", portion
+    ? `ปริมาณโดยประมาณ: ${portion.value} ${portion.unit} · ความมั่นใจ ${portion.confidence || "ไม่ระบุ"} (ตรวจและแก้ก่อนบันทึก)`
+    : "ยังประเมินปริมาณจากภาพไม่ได้ กรุณาระบุเองก่อนบันทึก");
+  appendPhotoText(content, "p", "food-image-nutrition-state",
+    "สารอาหาร: ยังไม่คำนวณ — ผลภาพไม่ใช่ข้อมูลโภชนาการที่ผ่านการตรวจสอบ");
+  appendPhotoText(content, "p", "food-image-provenance",
+    `ผู้ให้บริการวิเคราะห์ภาพ: ${data.provider || "ไม่ระบุ"} · รุ่น: ${data.model || "ไม่ระบุ"}`);
+  (data.limitations || []).forEach((limitation) => appendPhotoText(content, "p", "subtext", limitation));
+  const searchButton = document.createElement("button");
+  searchButton.type = "button";
+  searchButton.className = "secondary-button";
+  searchButton.textContent = "ค้นหาอาหารที่ตรงกันในคลัง";
+  searchButton.addEventListener("click", () => {
+    $("imageFoodSearch").value = identification.name || "";
+    searchFoodsFromImage();
+  });
+  content.appendChild(searchButton);
+  buildFoodImageSaveForm(content, data);
+  output.classList.remove("hidden");
+}
+
+function buildFoodImageSaveForm(parent, analysis) {
+  const form = document.createElement("form");
+  form.className = "food-image-save-form";
+  form.noValidate = true;
+  appendPhotoText(form, "h5", "", "ตรวจสอบก่อนเพิ่มลง Food Diary");
+  const fields = document.createElement("div");
+  fields.className = "food-image-save-grid";
+  const makeField = (labelText, control, id) => {
+    const wrapper = document.createElement("div");
+    const label = document.createElement("label");
+    label.htmlFor = id;
+    label.textContent = labelText;
+    control.id = id;
+    wrapper.append(label, control);
+    fields.appendChild(wrapper);
+  };
+  const foodName = document.createElement("input");
+  foodName.type = "text";
+  foodName.maxLength = 300;
+  foodName.required = true;
+  foodName.value = analysis.food_identification?.name || "";
+  makeField("ชื่ออาหาร (แก้ไขได้)", foodName, "foodImageConfirmedName");
+  const mealSelect = document.createElement("select");
+  mealSelect.required = true;
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = "กำลังโหลดมื้ออาหาร…";
+  mealSelect.appendChild(placeholder);
+  makeField("มื้ออาหาร", mealSelect, "foodImageTargetMeal");
+  const quantity = document.createElement("input");
+  quantity.type = "number";
+  quantity.min = "0.001";
+  quantity.step = "0.001";
+  quantity.inputMode = "decimal";
+  const portion = analysis.portion_estimate;
+  if (portion && ["g", "ml", "piece"].includes(portion.unit)) quantity.value = String(portion.value);
+  makeField("ปริมาณที่รับประทาน", quantity, "foodImageQuantity");
+  const unit = document.createElement("select");
+  unit.required = true;
+  [["", "เลือกหน่วย"], ["g", "กรัม"], ["ml", "มิลลิลิตร"], ["piece", "ชิ้น"], ["serving", "หน่วยบริโภค"], ["package", "แพ็ก"]].forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    unit.appendChild(option);
+  });
+  if (portion && ["g", "ml", "piece"].includes(portion.unit)) unit.value = portion.unit;
+  makeField("หน่วย (ไม่มีการแปลงอัตโนมัติ)", unit, "foodImageQuantityUnit");
+  form.appendChild(fields);
+  const mealMessage = appendPhotoText(form, "p", "message", "กำลังโหลดมื้ออาหารของคุณ…");
+  const confirmLabel = document.createElement("label");
+  confirmLabel.className = "food-image-confirmation";
+  const confirm = document.createElement("input");
+  confirm.type = "checkbox";
+  const confirmText = document.createElement("span");
+  confirmText.textContent = "ฉันตรวจสอบและยืนยันชื่ออาหาร มื้อ ปริมาณ และหน่วยแล้ว";
+  confirmLabel.append(confirm, confirmText);
+  form.appendChild(confirmLabel);
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.className = "primary-button";
+  save.textContent = "ยืนยันและบันทึกลง Food Diary";
+  save.disabled = true;
+  form.appendChild(save);
+  parent.appendChild(form);
+
+  let saving = false;
+  let saved = false;
+  fetch("/meals?limit=100&offset=0", { credentials: "same-origin" })
+    .then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(result.detail || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return result;
+    })
+    .then((result) => {
+      mealSelect.replaceChildren();
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = result.items?.length ? "เลือกมื้ออาหาร" : "ยังไม่มีมื้ออาหาร";
+      mealSelect.appendChild(empty);
+      (result.items || []).forEach((meal) => {
+        if (typeof meal.meal_log_id !== "string") return;
+        const option = document.createElement("option");
+        option.value = meal.meal_log_id;
+        option.textContent = `${meal.title || meal.meal_type} · ${meal.meal_date}`;
+        mealSelect.appendChild(option);
+      });
+      mealMessage.textContent = result.items?.length
+        ? "เลือกมื้อ ปรับปริมาณตามจริง และยืนยันก่อนบันทึก"
+        : "ยังไม่มีมื้ออาหาร กรุณาสร้างมื้อใน Food Diary ก่อนบันทึก";
+      if (!result.items?.length) {
+        const link = document.createElement("a");
+        link.href = "#myMeals";
+        link.textContent = "ไปที่ Food Diary";
+        mealMessage.append(" ", link);
+      }
+      save.disabled = !result.items?.length;
+    })
+    .catch((error) => {
+      mealMessage.textContent = error.status === 401
+        ? "กรุณาเข้าสู่ระบบเพื่อโหลดมื้ออาหาร"
+        : `โหลดมื้ออาหารไม่สำเร็จ: ${error.message}`;
+    });
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (saving || saved) return;
+    const amountText = quantity.value.trim();
+    const amount = Number(amountText);
+    if (!confirm.checked) {
+      mealMessage.textContent = "กรุณายืนยันข้อมูลก่อนบันทึก";
+      confirm.focus();
+      return;
+    }
+    if (!mealSelect.value) {
+      mealMessage.textContent = "กรุณาเลือกมื้ออาหาร";
+      mealSelect.focus();
+      return;
+    }
+    if (!foodName.value.trim()) {
+      mealMessage.textContent = "กรุณาระบุชื่ออาหารที่ยืนยันแล้ว";
+      foodName.focus();
+      return;
+    }
+    if (!amountText || !Number.isFinite(amount) || amount <= 0 || !unit.value
+        || !/^\d+(?:\.\d{1,3})?$/.test(amountText)) {
+      mealMessage.textContent = "กรุณาระบุปริมาณมากกว่า 0 และเลือกหน่วยให้ถูกต้อง";
+      quantity.focus();
+      return;
+    }
+    const selectedMealId = mealSelect.value;
+    const selectedFoodId = selectedPhotoFood?.food_id || null;
+    const selectedUnit = unit.value;
+    saving = true;
+    save.disabled = true;
+    [foodName, mealSelect, quantity, unit, confirm].forEach((control) => { control.disabled = true; });
+    mealMessage.textContent = "กำลังบันทึก…";
+    const requestBody = {
+      food_name: foodName.value.trim(),
+      quantity_value: amount,
+      quantity_unit: unit.value,
+      weight_g: unit.value === "g" ? amount : null,
+      volume_ml: unit.value === "ml" ? amount : null,
+      entry_source: "food_image",
+      notes: `AI image analysis proposal; provider=${analysis.provider || "unknown"}; model=${analysis.model || "unknown"}; identification_confidence=${analysis.food_identification?.confidence || "unknown"}; portion_estimate=${analysis.portion_estimate ? `${analysis.portion_estimate.value} ${analysis.portion_estimate.unit}` : "not_available"}; user confirmed.`,
+    };
+    if (selectedFoodId) requestBody.food_id = selectedFoodId;
+    try {
+      const response = await fetch(`/meals/${encodeURIComponent(selectedMealId)}/items`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.detail || `HTTP ${response.status}`);
+      if (result.status !== "success" || !result.item
+          || result.item.meal_log_id !== selectedMealId
+          || Number(result.item.quantity_value) !== amount
+          || result.item.quantity_unit !== selectedUnit
+          || result.item.entry_source !== "food_image"
+          || result.item.confirmation_status !== "needs_review"
+          || (selectedFoodId && result.item.food_id !== selectedFoodId)) {
+        throw new Error("ข้อมูลตอบกลับไม่ตรงกับรายการที่ยืนยัน กรุณาตรวจสอบ Food Diary");
+      }
+      saved = true;
+      mealMessage.textContent = "บันทึกแล้ว · รายการอยู่ในสถานะ needs_review และยังไม่ใช้คำนวณสารอาหาร";
+      form.querySelectorAll("input, select, button").forEach((control) => { control.disabled = true; });
+      await Promise.allSettled([
+        Promise.resolve().then(() => window.loadMealHistory?.()),
+        Promise.resolve().then(() => window.refreshNutritionSummary?.()),
+        Promise.resolve().then(() => window.refreshMealDetails?.(selectedMealId)),
+      ]);
+    } catch (error) {
+      mealMessage.textContent = `บันทึกไม่สำเร็จ: ${error.message}`;
+      [foodName, mealSelect, quantity, unit, confirm].forEach((control) => { control.disabled = false; });
+      save.disabled = false;
+    } finally {
+      saving = false;
+    }
+  });
+  foodName.addEventListener("input", () => { selectedPhotoFood = null; });
+}
 
 
 // Search foods by a name typed by the user in the photo section.
@@ -820,6 +1742,19 @@ async function searchFoodsFromImage() {
       });
 
       row.append(info, button);
+      if (currentFoodImageAnalysis) {
+        const matchButton = document.createElement("button");
+        matchButton.type = "button";
+        matchButton.className = "secondary-button";
+        matchButton.textContent = "ใช้ชื่อนี้ในรายการภาพ";
+        matchButton.addEventListener("click", () => {
+          selectedPhotoFood = food;
+          const confirmedName = $("foodImageConfirmedName");
+          if (confirmedName) confirmedName.value = name;
+          message.textContent = `เลือก ${name} เป็นรายการจากคลังแล้ว · สถานะข้อมูล ${status}`;
+        });
+        row.appendChild(matchButton);
+      }
       results.appendChild(row);
     });
   } catch (error) {

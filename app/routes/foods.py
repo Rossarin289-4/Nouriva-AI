@@ -2,11 +2,22 @@ import re
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.routes.auth import get_current_user
+from app.services.food_photo_analysis import (
+    ALLOWED_IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
+    FoodImageAnalysisUnavailable,
+    analyze_food_image,
+)
+from app.services.openfoodfacts import (
+    OpenFoodFactsUnavailable,
+    lookup_barcode as lookup_openfoodfacts_barcode,
+)
 
 
 router = APIRouter(
@@ -132,6 +143,71 @@ def get_food_by_barcode(
         "status": "success",
         "item": dict(row)
     }
+
+
+@router.get("/external/openfoodfacts/barcode/{barcode}")
+def get_external_food_by_barcode(barcode: str):
+    """Look up a product externally without importing it into the local DB."""
+    code = barcode.strip()
+    if not re.fullmatch(r"[0-9]{8,14}", code):
+        raise HTTPException(
+            status_code=422,
+            detail="รหัส Barcode ต้องเป็นตัวเลข 8-14 หลัก",
+        )
+
+    try:
+        result = lookup_openfoodfacts_barcode(code)
+    except OpenFoodFactsUnavailable as error:
+        raise HTTPException(
+            status_code=error.status_code, detail=str(error)
+        ) from error
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="ไม่พบรหัสนี้ใน Open Food Facts",
+        )
+    return result
+
+
+@router.post("/image-analysis")
+async def analyze_food_photo(
+    request: Request,
+    user=Depends(get_current_user),
+):
+    """Analyze an explicitly consented image in memory; do not persist the photo."""
+    if request.headers.get("x-food-image-consent", "").lower() != "true":
+        raise HTTPException(
+            status_code=400,
+            detail="กรุณายืนยันการส่งภาพไปยังผู้ให้บริการวิเคราะห์ก่อน",
+        )
+
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+    if content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=415,
+            detail="รองรับไฟล์ภาพ JPEG, PNG และ WebP เท่านั้น",
+        )
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > MAX_IMAGE_BYTES:
+                raise HTTPException(status_code=413, detail="ภาพใหญ่เกินไป (สูงสุด 10 MB)")
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail="ขนาดคำขอไม่ถูกต้อง") from error
+
+    chunks = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=413, detail="ภาพใหญ่เกินไป (สูงสุด 10 MB)")
+        chunks.append(chunk)
+
+    try:
+        return analyze_food_image(b"".join(chunks), content_type)
+    except FoodImageAnalysisUnavailable as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
 
 @router.get("/{food_id}")
 def get_food(

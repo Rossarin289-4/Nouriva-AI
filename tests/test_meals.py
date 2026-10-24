@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 import jwt
+import pytest
 from fastapi.testclient import TestClient
 
 from app.database import get_db
@@ -89,6 +90,156 @@ def setup_db(db):
 
 def teardown_db():
     app.dependency_overrides.pop(get_db, None)
+
+
+class MealLogMutationFakeDB:
+    def __init__(self, owns_meal=True):
+        self.owns_meal = owns_meal
+        self.calls = []
+        self.committed = False
+        self.rolled_back = False
+        self.meal = {
+            "meal_log_id": "00000000-0000-0000-0000-000000000099",
+            "meal_date": date(2026, 10, 23),
+            "meal_type": "lunch",
+            "eaten_at": None,
+            "title": "มื้อที่แก้ไข",
+            "notes": None,
+            "created_at": datetime(2026, 10, 23, tzinfo=timezone.utc),
+            "updated_at": datetime(2026, 10, 23, tzinfo=timezone.utc),
+        }
+
+    def execute(self, query, params=None):
+        sql = str(query)
+        params = params or {}
+        if "revoked_auth_tokens" in sql:
+            return Result()
+        if "FROM public.app_users" in sql:
+            return Result(row={
+                "user_id": USER_ID,
+                "email": "meal-test@example.com",
+                "role": "user",
+                "is_active": True,
+                "email_verified_at": None,
+            })
+        self.calls.append((sql, params))
+        if sql.lstrip().startswith("UPDATE meal_logs"):
+            return Result(row=self.meal if self.owns_meal else None)
+        if "FOR UPDATE" in sql:
+            return Result(row={"meal_log_id": self.meal["meal_log_id"]} if self.owns_meal else None)
+        if sql.lstrip().startswith("DELETE FROM meal_items"):
+            return Result()
+        if sql.lstrip().startswith("DELETE FROM meal_logs"):
+            return Result(row={"meal_log_id": self.meal["meal_log_id"]} if self.owns_meal else None)
+        raise AssertionError("Unexpected SQL: " + sql)
+
+    def commit(self):
+        self.committed = True
+
+    def rollback(self):
+        self.rolled_back = True
+
+    def close(self):
+        pass
+
+
+def test_update_and_delete_meals_require_authentication():
+    setup_db(MealLogMutationFakeDB())
+    try:
+        with TestClient(app) as client:
+            update = client.patch(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                json={"title": "อัปเดต"},
+            )
+            delete = client.delete(
+                "/meals/00000000-0000-0000-0000-000000000099",
+            )
+        assert update.status_code == 401
+        assert delete.status_code == 401
+    finally:
+        teardown_db()
+
+
+def test_update_meal_only_changes_allowed_fields_for_owner():
+    db = MealLogMutationFakeDB()
+    setup_db(db)
+    try:
+        with TestClient(app) as client:
+            response = client.patch(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                headers=auth_headers(),
+                json={"title": " มื้อที่แก้ไข ", "notes": " บันทึก "},
+            )
+        assert response.status_code == 200
+        assert response.json()["meal"]["title"] == "มื้อที่แก้ไข"
+        sql, params = next(
+            (sql, params) for sql, params in db.calls
+            if sql.lstrip().startswith("UPDATE meal_logs")
+        )
+        assert "WHERE meal_log_id = :meal_log_id" in sql
+        assert "AND user_id = :user_id" in sql
+        assert params["user_id"] == USER_ID
+        assert params["notes"] == "บันทึก"
+        assert db.committed
+    finally:
+        teardown_db()
+
+
+def test_update_meal_rejects_unknown_fields_and_non_owned_meal():
+    db = MealLogMutationFakeDB(owns_meal=False)
+    setup_db(db)
+    try:
+        with TestClient(app) as client:
+            unknown = client.patch(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                headers=auth_headers(),
+                json={"user_id": USER_ID},
+            )
+            missing = client.patch(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                headers=auth_headers(),
+                json={"title": "แก้ของคนอื่น"},
+            )
+        assert unknown.status_code == 422
+        assert missing.status_code == 404
+        assert not db.committed
+    finally:
+        teardown_db()
+
+
+def test_delete_meal_removes_only_owned_meal_and_its_items():
+    db = MealLogMutationFakeDB()
+    setup_db(db)
+    try:
+        with TestClient(app) as client:
+            response = client.delete(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                headers=auth_headers(),
+            )
+        assert response.status_code == 204
+        statements = [sql.lstrip() for sql, _ in db.calls]
+        assert next(i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM meal_items")) < next(
+            i for i, sql in enumerate(statements) if sql.startswith("DELETE FROM meal_logs")
+        )
+        assert db.committed
+    finally:
+        teardown_db()
+
+
+def test_delete_meal_does_not_touch_unowned_meal_or_items():
+    db = MealLogMutationFakeDB(owns_meal=False)
+    setup_db(db)
+    try:
+        with TestClient(app) as client:
+            response = client.delete(
+                "/meals/00000000-0000-0000-0000-000000000099",
+                headers=auth_headers(),
+            )
+        assert response.status_code == 404
+        assert not any(sql.lstrip().startswith("DELETE FROM") for sql, _ in db.calls)
+        assert not db.committed
+    finally:
+        teardown_db()
 
 
 def test_create_meal_requires_authentication():
@@ -303,6 +454,389 @@ class MealItemFakeDB:
         pass
 
 
+EXTERNAL_MEAL_ID = "00000000-0000-0000-0000-000000000099"
+EXTERNAL_FOOD_ID = "00000000-0000-0000-0000-000000000088"
+EXTERNAL_SOURCE_ID = "00000000-0000-0000-0000-000000000077"
+EXTERNAL_BARCODE = "3017620422003"
+
+
+def external_food_response():
+    return {
+        "status": "external_unverified",
+        "item": {
+            "barcode": EXTERNAL_BARCODE,
+            "external_product_id": EXTERNAL_BARCODE,
+            "name": "Nutella",
+            "brand_name": "Ferrero",
+            "package_quantity": "350 g",
+            "verification_status": "external_unverified",
+            "nutrition_reference_per_100g": {"energy-kcal_100g": 539},
+        },
+        "source": {
+            "source_code": "OPEN_FOOD_FACTS",
+            "source_name": "Open Food Facts",
+            "source_url": f"https://world.openfoodfacts.org/product/{EXTERNAL_BARCODE}",
+            "fetched_at": "2026-10-23T10:00:00+00:00",
+            "license_or_attribution": "ODbL",
+        },
+    }
+
+
+class ExternalMealItemFakeDB:
+    def __init__(self, owns_meal=True, duplicate=False, fail_insert=False):
+        self.owns_meal = owns_meal
+        self.duplicate = duplicate
+        self.fail_insert = fail_insert
+        self.calls = []
+        self.commits = 0
+        self.rollbacks = 0
+        self.food = None
+        self.item = None
+
+    def execute(self, query, params=None):
+        import json
+        from sqlalchemy.exc import SQLAlchemyError
+
+        sql = str(query)
+        params = params or {}
+        if "revoked_auth_tokens" in sql:
+            return Result()
+        if "FROM public.app_users" in sql:
+            return Result(row={
+                "user_id": USER_ID,
+                "email": "meal-test@example.com",
+                "role": "user",
+                "is_active": True,
+                "email_verified_at": None,
+            })
+        self.calls.append((sql, params))
+        if "FROM meal_logs" in sql:
+            return Result(row={"meal_log_id": EXTERNAL_MEAL_ID} if self.owns_meal else None)
+        if "FROM food_sources" in sql:
+            return Result(row={"food_source_id": EXTERNAL_SOURCE_ID})
+        if sql.lstrip().startswith("INSERT INTO food_items"):
+            if self.food is not None:
+                return Result()
+            self.food = {
+                "food_id": EXTERNAL_FOOD_ID,
+                "verification_status": "unverified",
+                "external_metadata": json.loads(params["external_metadata"]),
+            }
+            return Result(row=self.food)
+        if "FROM food_items" in sql:
+            return Result(row=self.food)
+        if "FROM meal_items" in sql and sql.lstrip().startswith("SELECT"):
+            if "LEFT JOIN food_items" in sql:
+                return Result(rows=[self.item] if self.item else [])
+            return Result(row=self.item if self.duplicate or self.item else None)
+        if sql.lstrip().startswith("INSERT INTO meal_items"):
+            if self.fail_insert:
+                raise SQLAlchemyError("simulated database failure")
+            self.item = {
+                "meal_item_id": "new-external-item",
+                "meal_log_id": params["meal_log_id"],
+                "food_id": params["food_id"],
+                "food_name_snapshot": params["food_name_snapshot"],
+                "quantity_value": params["quantity_value"],
+                "quantity_unit": params["quantity_unit"],
+                "weight_g": params["weight_g"],
+                "volume_ml": params["volume_ml"],
+                "portion_id": None,
+                "entry_source": "barcode",
+                "confirmation_status": "needs_review",
+                "source_confidence": None,
+                "notes": params["notes"],
+                "external_status": "external_unverified",
+                "external_source_code": "OPEN_FOOD_FACTS",
+                "external_source_name": "Open Food Facts",
+                "external_source_url": (
+                    f"https://world.openfoodfacts.org/product/{EXTERNAL_BARCODE}"
+                ),
+            }
+            return Result(row=self.item)
+        raise AssertionError("Unexpected SQL: " + sql)
+
+    def commit(self):
+        self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
+
+    def close(self):
+        pass
+
+
+def post_external_meal_item(client, meal_id=EXTERNAL_MEAL_ID, **overrides):
+    payload = {
+        "barcode": EXTERNAL_BARCODE,
+        "quantity_value": 25,
+        "quantity_unit": "g",
+        "confirm_add": True,
+    }
+    payload.update(overrides)
+    return client.post(
+        f"/meals/{meal_id}/external-items",
+        headers=auth_headers(),
+        json=payload,
+    )
+
+
+def test_confirmed_external_food_is_added_to_owned_meal_unverified(monkeypatch):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda barcode: external_food_response() if barcode == EXTERNAL_BARCODE else None,
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client)
+            history = client.get(
+                f"/meals/{EXTERNAL_MEAL_ID}/items",
+                headers=auth_headers(),
+            )
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["external_status"] == "external_unverified"
+        assert data["source"]["source_url"].endswith(EXTERNAL_BARCODE)
+        assert data["item"]["food_id"] == EXTERNAL_FOOD_ID
+        assert data["item"]["quantity_value"] == 25
+        assert data["item"]["quantity_unit"] == "g"
+        assert data["item"]["weight_g"] == 25
+        assert data["item"]["entry_source"] == "barcode"
+        assert data["item"]["confirmation_status"] == "needs_review"
+        assert history.status_code == 200
+        assert history.json()["items"][0]["external_status"] == "external_unverified"
+        assert history.json()["items"][0]["external_source_code"] == "OPEN_FOOD_FACTS"
+        food_sql, food_params = next(
+            (sql, params) for sql, params in db.calls
+            if sql.lstrip().startswith("INSERT INTO food_items")
+        )
+        assert "'unverified'" in food_sql
+        assert "nutrition_reference_per_100g" not in food_params["external_metadata"]
+        assert db.food["external_metadata"]["external_status"] == "external_unverified"
+        assert db.commits == 1
+    finally:
+        teardown_db()
+
+
+def test_external_serving_quantity_is_preserved_without_weight_conversion(monkeypatch):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(
+                client,
+                quantity_value=100,
+                quantity_unit="serving",
+            )
+
+        assert response.status_code == 201
+        item = response.json()["item"]
+        assert item["quantity_value"] == 100
+        assert item["quantity_unit"] == "serving"
+        assert item["weight_g"] is None
+        assert item["volume_ml"] is None
+        insert_params = next(
+            params for sql, params in db.calls
+            if sql.lstrip().startswith("INSERT INTO meal_items")
+        )
+        assert insert_params["quantity_unit"] == "serving"
+        assert insert_params["weight_g"] is None
+        assert insert_params["volume_ml"] is None
+    finally:
+        teardown_db()
+
+
+def test_external_barcode_uses_requested_meal_id_and_exact_quantity(monkeypatch):
+    selected_meal_id = "00000000-0000-0000-0000-000000000123"
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(
+                client,
+                meal_id=selected_meal_id,
+                quantity_value=100,
+                quantity_unit="serving",
+            )
+
+        assert response.status_code == 201
+        item = response.json()["item"]
+        assert item["meal_log_id"] == selected_meal_id
+        assert item["quantity_value"] == 100
+        assert item["quantity_unit"] == "serving"
+        insert_sql, insert_params = next(
+            (sql, params) for sql, params in db.calls
+            if sql.lstrip().startswith("INSERT INTO meal_items")
+        )
+        assert "meal_log_id" in insert_sql
+        assert insert_params["meal_log_id"] == selected_meal_id
+        assert insert_params["quantity_value"] == 100
+        assert insert_params["quantity_unit"] == "serving"
+        ownership_checks = [
+            params for sql, params in db.calls
+            if "FROM meal_logs" in sql and "user_id = :user_id" in sql
+        ]
+        assert ownership_checks
+        assert all(params["meal_log_id"] == selected_meal_id for params in ownership_checks)
+    finally:
+        teardown_db()
+
+
+def test_external_food_is_not_saved_without_explicit_confirmation(monkeypatch):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client, confirm_add=None)
+        assert response.status_code == 422
+        assert not any("INSERT INTO" in sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
+def test_external_food_add_requires_authentication(monkeypatch):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+
+    def lookup_must_not_run(_barcode):
+        raise AssertionError("unauthenticated request must not fetch product")
+
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode", lookup_must_not_run
+    )
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/meals/{EXTERNAL_MEAL_ID}/external-items",
+                json={
+                    "barcode": EXTERNAL_BARCODE,
+                    "quantity_value": 25,
+                    "quantity_unit": "g",
+                    "confirm_add": True,
+                },
+            )
+        assert response.status_code == 401
+        assert not any("INSERT INTO" in sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"quantity_value": 0},
+        {"quantity_value": -2},
+        {"quantity_unit": "box"},
+    ],
+)
+def test_external_food_rejects_invalid_quantity_or_unit(monkeypatch, overrides):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client, **overrides)
+        assert response.status_code == 422
+        assert not any("INSERT INTO" in sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
+def test_external_food_rejects_meal_owned_by_another_user(monkeypatch):
+    db = ExternalMealItemFakeDB(owns_meal=False)
+    setup_db(db)
+
+    def lookup_must_not_run(_barcode):
+        raise AssertionError("must reject ownership before upstream lookup")
+
+    monkeypatch.setattr("app.routes.meals.lookup_openfoodfacts_barcode", lookup_must_not_run)
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client)
+        assert response.status_code == 404
+        assert not any("INSERT INTO" in sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
+def test_external_api_error_does_not_write_food_or_meal_item(monkeypatch):
+    from app.services.openfoodfacts import OpenFoodFactsUnavailable
+
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: (_ for _ in ()).throw(
+            OpenFoodFactsUnavailable("upstream unavailable", 503)
+        ),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client)
+        assert response.status_code == 503
+        assert "INSERT INTO" not in " ".join(sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
+def test_repeated_external_food_submission_is_idempotent(monkeypatch):
+    db = ExternalMealItemFakeDB()
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            first = post_external_meal_item(client)
+            second = post_external_meal_item(client)
+        assert first.status_code == 201
+        assert second.status_code == 200
+        assert second.json()["duplicate"] is True
+        assert sum(
+            sql.lstrip().startswith("INSERT INTO meal_items")
+            for sql, _ in db.calls
+        ) == 1
+    finally:
+        teardown_db()
+
+
+def test_external_food_database_error_rolls_back_with_clear_error(monkeypatch):
+    db = ExternalMealItemFakeDB(fail_insert=True)
+    setup_db(db)
+    monkeypatch.setattr(
+        "app.routes.meals.lookup_openfoodfacts_barcode",
+        lambda _barcode: external_food_response(),
+    )
+    try:
+        with TestClient(app) as client:
+            response = post_external_meal_item(client)
+        assert response.status_code == 503
+        assert "บันทึกรายการอาหารไม่สำเร็จ" in response.json()["detail"]
+        assert db.rollbacks >= 1
+        assert db.commits == 0
+    finally:
+        teardown_db()
+
+
 def test_create_meal_item_cannot_modify_another_users_meal():
     db = MealItemFakeDB(owns_meal=False)
     setup_db(db)
@@ -445,6 +979,34 @@ def test_list_meal_items_rejects_meal_not_owned_by_user():
         teardown_db()
 
 
+def test_list_meal_items_returns_empty_array_for_owned_meal_without_items():
+    db = MealItemFakeDB()
+    original_execute = db.execute
+
+    def execute_without_items(query, params=None):
+        sql = str(query)
+        if "FROM meal_items" in sql:
+            db.calls.append((sql, params or {}))
+            return Result(rows=[])
+        return original_execute(query, params)
+
+    db.execute = execute_without_items
+    setup_db(db)
+    try:
+        with TestClient(app) as client:
+            response = client.get(
+                "/meals/00000000-0000-0000-0000-000000000099/items",
+                headers=auth_headers(),
+            )
+
+        assert response.status_code == 200
+        assert response.json()["count"] == 0
+        assert response.json()["items"] == []
+        assert any("FROM meal_items" in sql for sql, _ in db.calls)
+    finally:
+        teardown_db()
+
+
 def test_list_meal_items_returns_only_items_for_owned_meal():
     db = MealItemFakeDB()
     expected_item = {
@@ -496,7 +1058,7 @@ def test_list_meal_items_returns_only_items_for_owned_meal():
             (sql, params) for sql, params in db.calls
             if "FROM meal_items" in sql
         )
-        assert "WHERE meal_log_id = :meal_log_id" in item_query
+        assert "WHERE mi.meal_log_id = :meal_log_id" in item_query
         assert params["meal_log_id"] == "00000000-0000-0000-0000-000000000099"
     finally:
         teardown_db()
